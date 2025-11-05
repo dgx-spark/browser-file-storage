@@ -17,36 +17,49 @@
 
             <!-- Login Form -->
             <form id="loginForm" class="auth-form" onsubmit="handleLogin(event)">
+                <div id="loginMessage" class="auth-message" style="display: none;"></div>
                 <div class="form-group">
                     <label class="form-label">$ USERNAME:</label>
-                    <input type="text" class="form-input" id="loginUsername" placeholder="enter_username" required>
+                    <input type="text" class="form-input" id="loginUsername" placeholder="enter_username" required autocomplete="username">
+                    <div class="field-error" id="loginUsernameError"></div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">$ PASSWORD:</label>
-                    <input type="password" class="form-input" id="loginPassword" placeholder="enter_password" required>
+                    <input type="password" class="form-input" id="loginPassword" placeholder="enter_password" required autocomplete="current-password">
+                    <div class="field-error" id="loginPasswordError"></div>
                 </div>
                 <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">
                     [ENTER] LOGIN
                 </button>
+                <div style="text-align: center; margin-top: 15px;">
+                    <a class="auth-toggle-link" onclick="showForgotPasswordModal()" style="font-size: 11px;">
+                        [FORGOT PASSWORD?]
+                    </a>
+                </div>
             </form>
 
             <!-- Register Form -->
             <form id="registerForm" class="auth-form" onsubmit="handleRegister(event)" style="display: none;">
+                <div id="registerMessage" class="auth-message" style="display: none;"></div>
                 <div class="form-group">
                     <label class="form-label">$ USERNAME:</label>
-                    <input type="text" class="form-input" id="registerUsername" placeholder="choose_username" required>
+                    <input type="text" class="form-input" id="registerUsername" placeholder="choose_username" required autocomplete="username">
+                    <div class="field-error" id="registerUsernameError"></div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">$ EMAIL:</label>
-                    <input type="email" class="form-input" id="registerEmail" placeholder="enter_email" required>
+                    <input type="email" class="form-input" id="registerEmail" placeholder="enter_email" required autocomplete="email">
+                    <div class="field-error" id="registerEmailError"></div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">$ PASSWORD:</label>
-                    <input type="password" class="form-input" id="registerPassword" placeholder="choose_password" required>
+                    <input type="password" class="form-input" id="registerPassword" placeholder="choose_password" required autocomplete="new-password">
+                    <div class="field-error" id="registerPasswordError"></div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">$ CONFIRM PASSWORD:</label>
-                    <input type="password" class="form-input" id="registerConfirmPassword" placeholder="confirm_password" required>
+                    <input type="password" class="form-input" id="registerConfirmPassword" placeholder="confirm_password" required autocomplete="new-password">
+                    <div class="field-error" id="registerConfirmPasswordError"></div>
                 </div>
                 <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">
                     [ENTER] REGISTER
@@ -218,6 +231,25 @@
             <div class="modal-header">// ADMIN CONTROL PANEL</div>
             <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                 <div id="adminStats"></div>
+                <div style="border-top: 1px solid rgba(0, 255, 0, 0.3); padding-top: 15px; margin-top: 15px; margin-bottom: 15px;">
+                    <div style="font-size: 13px; font-weight: 700; color: #00ff00; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 2px;">
+                        // DATA MANAGEMENT
+                    </div>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button class="btn btn-secondary" onclick="exportAllData()" style="padding: 8px 15px; font-size: 11px;">
+                            [↓] EXPORT ALL DATA
+                        </button>
+                        <button class="btn btn-secondary" onclick="importAllData()" style="padding: 8px 15px; font-size: 11px;">
+                            [↑] IMPORT DATA
+                        </button>
+                        <button class="btn btn-cancel" onclick="clearAllData()" style="padding: 8px 15px; font-size: 11px;">
+                            [×] CLEAR ALL DATA
+                        </button>
+                    </div>
+                    <div style="font-size: 10px; color: rgba(0, 255, 0, 0.6); margin-top: 8px;">
+                        // EXPORT/IMPORT INCLUDES: USERS, SESSIONS, SETTINGS, AND FILES
+                    </div>
+                </div>
                 <div style="border-top: 1px solid rgba(0, 255, 0, 0.3); padding-top: 15px; margin-top: 15px;">
                     <div style="font-size: 13px; font-weight: 700; color: #00ff00; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 2px;">
                         // USER MANAGEMENT
@@ -230,6 +262,104 @@
             </div>
         </div>
     </div>
+
+    <!-- Change Admin Password Modal -->
+    <div class="modal" id="changePasswordModal">
+        <div class="modal-content">
+            <div class="modal-header">// CHANGE ADMIN PASSWORD</div>
+            <div class="modal-body">
+                <div id="changePasswordMessage" class="auth-message" style="display: none;"></div>
+                <div class="form-group">
+                    <label class="form-label">$ CURRENT PASSWORD:</label>
+                    <input type="password" class="form-input" id="currentPassword" placeholder="enter_current_password" autocomplete="current-password">
+                    <div class="field-error" id="currentPasswordError"></div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">$ NEW PASSWORD:</label>
+                    <input type="password" class="form-input" id="newPassword" placeholder="enter_new_password" autocomplete="new-password">
+                    <div class="field-error" id="newPasswordError"></div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">$ CONFIRM NEW PASSWORD:</label>
+                    <input type="password" class="form-input" id="confirmNewPassword" placeholder="confirm_new_password" autocomplete="new-password">
+                    <div class="field-error" id="confirmNewPasswordError"></div>
+                </div>
+                <div style="margin-top: 15px; padding: 10px; background: rgba(255, 165, 0, 0.1); border: 1px solid rgba(255, 165, 0, 0.3); font-size: 11px; color: rgba(255, 165, 0, 0.8);">
+                    ⚠️ WARNING: CHANGING YOUR PASSWORD WILL LOG YOU OUT. YOU WILL NEED TO LOGIN AGAIN WITH THE NEW PASSWORD.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-cancel" onclick="closeChangePasswordModal()">[ESC] CANCEL</button>
+                <button class="btn btn-primary" onclick="confirmChangePassword()">[ENTER] CHANGE PASSWORD</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Forgot Password Modal -->
+    <div class="modal" id="forgotPasswordModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">// PASSWORD RECOVERY</div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <div id="forgotPasswordMessage" class="auth-message" style="display: none;"></div>
+                
+                <div style="margin-bottom: 20px; padding: 15px; background: rgba(0, 255, 255, 0.1); border: 1px solid rgba(0, 255, 255, 0.3); font-size: 12px; color: rgba(0, 255, 255, 0.9);">
+                    <div style="font-weight: 700; margin-bottom: 8px;">📋 PASSWORD RECOVERY:</div>
+                    <div style="line-height: 1.6;">
+                        <strong style="color: #ff0000;">⚠️ ADMIN PASSWORD RECOVERY:</strong><br/>
+                        • If you forgot admin password, you MUST use data export/import<br/>
+                        • Only option: Clear all data and start fresh (lose everything)<br/>
+                        • Or: Import a previous backup if you have one<br/><br/>
+                        
+                        <strong>FOR REGULAR USERS ONLY:</strong><br/>
+                        • Click "Generate Recovery Code" button below<br/>
+                        • Check browser console (F12) for your code<br/>
+                        • Code is specific to your username<br/>
+                        • Expires in 10 minutes<br/><br/>
+                        
+                        <strong style="color: #ffaa00;">� IMPORTANT:</strong><br/>
+                        • Regular users can reset their passwords with recovery codes<br/>
+                        • Admin password cannot be recovered (security by design)<br/>
+                        • Always export backups to prevent lockouts
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">$ USERNAME:</label>
+                    <input type="text" class="form-input" id="recoveryUsername" placeholder="enter_username" value="admin">
+                    <div class="field-error" id="recoveryUsernameError"></div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">$ RECOVERY CODE:</label>
+                    <input type="text" class="form-input" id="recoveryCode" placeholder="enter_recovery_code" style="text-transform: uppercase;">
+                    <div class="field-error" id="recoveryCodeError"></div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">$ NEW PASSWORD:</label>
+                    <input type="password" class="form-input" id="recoveryNewPassword" placeholder="enter_new_password">
+                    <div class="field-error" id="recoveryNewPasswordError"></div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">$ CONFIRM NEW PASSWORD:</label>
+                    <input type="password" class="form-input" id="recoveryConfirmPassword" placeholder="confirm_new_password">
+                    <div class="field-error" id="recoveryConfirmPasswordError"></div>
+                </div>
+                
+                <button class="btn btn-secondary" onclick="generateRecoveryCode()" style="width: 100%; justify-content: center; margin-top: 10px;">
+                    [🔑] GENERATE RECOVERY CODE (CHECK CONSOLE)
+                </button>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-cancel" onclick="closeForgotPasswordModal()">[ESC] CANCEL</button>
+                <button class="btn btn-primary" onclick="confirmPasswordRecovery()">[ENTER] RESET PASSWORD</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden file input for import -->
+    <input type="file" id="importFileInput" accept=".json" style="display: none;" onchange="handleImportFile(event)">
 
     <!-- JavaScript -->
     <script src="app.js"></script>

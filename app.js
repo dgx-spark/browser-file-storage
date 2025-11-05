@@ -14,9 +14,9 @@ class AuthManager {
             const request = indexedDB.open(this.dbName, this.dbVersion);
 
             request.onerror = () => reject(request.error);
-            request.onsuccess = () => {
+            request.onsuccess = async () => {
                 this.db = request.result;
-                this.ensureAdminExists();
+                await this.ensureAdminExists();
                 resolve(this.db);
             };
 
@@ -44,26 +44,30 @@ class AuthManager {
     }
 
     async ensureAdminExists() {
-        const transaction = this.db.transaction(['users'], 'readwrite');
-        const store = transaction.objectStore('users');
+        return new Promise((resolve) => {
+            const transaction = this.db.transaction(['users'], 'readwrite');
+            const store = transaction.objectStore('users');
 
-        const checkRequest = store.get(this.ADMIN_USERNAME);
-        checkRequest.onsuccess = () => {
-            if (!checkRequest.result) {
-                // Create admin account
-                const hashedPassword = btoa(this.ADMIN_DEFAULT_PASSWORD + this.ADMIN_USERNAME);
-                const admin = {
-                    username: this.ADMIN_USERNAME,
-                    password: hashedPassword,
-                    email: 'admin@filemanager.local',
-                    role: 'admin',
-                    createdAt: new Date().toISOString(),
-                    avatar: '#ff0000'
-                };
-                store.add(admin);
-                console.log('Admin account created. Username: admin, Password: admin123');
-            }
-        };
+            const checkRequest = store.get(this.ADMIN_USERNAME);
+            checkRequest.onsuccess = () => {
+                if (!checkRequest.result) {
+                    // Create admin account
+                    const hashedPassword = btoa(this.ADMIN_DEFAULT_PASSWORD + this.ADMIN_USERNAME);
+                    const admin = {
+                        username: this.ADMIN_USERNAME,
+                        password: hashedPassword,
+                        email: 'admin@filemanager.local',
+                        role: 'admin',
+                        createdAt: new Date().toISOString(),
+                        avatar: '#ff0000'
+                    };
+                    store.add(admin);
+                    console.log('Admin account created. Username: admin, Password: admin123');
+                }
+                resolve();
+            };
+            checkRequest.onerror = () => resolve();
+        });
     }
 
     async register(username, password, email, role = 'user') {
@@ -126,12 +130,15 @@ class AuthManager {
                 const session = {
                     username: username,
                     loginTime: new Date().toISOString(),
-                    token: this.generateToken()
+                    token: this.generateToken(),
+                    persistent: true,
+                    lastActivity: new Date().toISOString()
                 };
 
                 sessionStore.put(session);
                 this.currentUser = user;
                 localStorage.setItem('currentUser', username);
+                localStorage.setItem('sessionToken', session.token);
                 resolve(user);
             };
             request.onerror = () => reject(request.error);
@@ -145,24 +152,73 @@ class AuthManager {
             store.delete(this.currentUser.username);
             this.currentUser = null;
             localStorage.removeItem('currentUser');
+            localStorage.removeItem('sessionToken');
         }
     }
 
     async getCurrentUser() {
         const username = localStorage.getItem('currentUser');
-        if (!username) return null;
+        if (!username) {
+            console.log('No username in localStorage');
+            return null;
+        }
 
-        const transaction = this.db.transaction(['users'], 'readonly');
-        const store = transaction.objectStore('users');
+        console.log('Attempting to restore session for:', username);
 
-        return new Promise((resolve, reject) => {
-            const request = store.get(username);
-            request.onsuccess = () => {
-                this.currentUser = request.result;
-                resolve(request.result);
-            };
-            request.onerror = () => reject(request.error);
-        });
+        try {
+            const transaction = this.db.transaction(['users'], 'readonly');
+            const userStore = transaction.objectStore('users');
+
+            return new Promise((resolve) => {
+                const userRequest = userStore.get(username);
+                
+                userRequest.onsuccess = async () => {
+                    const user = userRequest.result;
+                    if (!user) {
+                        console.log('User not found in database:', username);
+                        // User doesn't exist, clear localStorage
+                        localStorage.removeItem('currentUser');
+                        localStorage.removeItem('sessionToken');
+                        resolve(null);
+                        return;
+                    }
+
+                    console.log('User found, restoring session:', username);
+                    
+                    // Create or update session
+                    try {
+                        const sessionTransaction = this.db.transaction(['sessions'], 'readwrite');
+                        const sessionStore = sessionTransaction.objectStore('sessions');
+                        
+                        const session = {
+                            username: username,
+                            loginTime: new Date().toISOString(),
+                            token: this.generateToken(),
+                            persistent: true,
+                            lastActivity: new Date().toISOString()
+                        };
+                        
+                        sessionStore.put(session);
+                        console.log('Session created/updated for:', username);
+                    } catch (sessionError) {
+                        console.error('Error creating session:', sessionError);
+                    }
+                    
+                    this.currentUser = user;
+                    resolve(user);
+                };
+                
+                userRequest.onerror = () => {
+                    console.error('Error fetching user:', userRequest.error);
+                    localStorage.removeItem('currentUser');
+                    localStorage.removeItem('sessionToken');
+                    resolve(null);
+                };
+            });
+        } catch (error) {
+            console.error('Error in getCurrentUser:', error);
+            return null;
+        }
     }
 
     async createDefaultSettings(username) {
@@ -209,6 +265,30 @@ class AuthManager {
         const colors = ['#00ff00', '#00cc00', '#00aa00', '#008800'];
         const color = colors[username.length % colors.length];
         return color;
+    }
+
+    async updateSessionActivity() {
+        if (!this.currentUser) return;
+        
+        try {
+            const transaction = this.db.transaction(['sessions'], 'readwrite');
+            const store = transaction.objectStore('sessions');
+            
+            return new Promise((resolve) => {
+                const request = store.get(this.currentUser.username);
+                request.onsuccess = () => {
+                    const session = request.result;
+                    if (session) {
+                        session.lastActivity = new Date().toISOString();
+                        store.put(session);
+                    }
+                    resolve();
+                };
+                request.onerror = () => resolve(); // Silently fail
+            });
+        } catch (error) {
+            console.error('Error updating session activity:', error);
+        }
     }
 
     isAdmin(user) {
@@ -300,6 +380,34 @@ class AuthManager {
                 updateRequest.onsuccess = () => resolve(true);
                 updateRequest.onerror = () => reject(updateRequest.error);
             };
+        });
+    }
+
+    async updateUserPassword(username, newPassword) {
+        const transaction = this.db.transaction(['users'], 'readwrite');
+        const store = transaction.objectStore('users');
+
+        return new Promise((resolve, reject) => {
+            const getRequest = store.get(username);
+            getRequest.onsuccess = () => {
+                const user = getRequest.result;
+                if (!user) {
+                    reject(new Error('User not found'));
+                    return;
+                }
+
+                user.password = btoa(newPassword + username);
+                const updateRequest = store.put(user);
+                updateRequest.onsuccess = () => {
+                    // Update currentUser if it's the current user changing their password
+                    if (this.currentUser && this.currentUser.username === username) {
+                        this.currentUser.password = user.password;
+                    }
+                    resolve(true);
+                };
+                updateRequest.onerror = () => reject(updateRequest.error);
+            };
+            getRequest.onerror = () => reject(getRequest.error);
         });
     }
 
@@ -513,6 +621,7 @@ let currentView = 'grid';
 let currentFilter = 'all';
 let currentPath = 'home';
 let selectedFile = null;
+let sessionUpdateInterval = null;
 
 // Icon mapping
 const icons = {
@@ -525,26 +634,70 @@ const icons = {
     default: '📄'
 };
 
+// Start session activity tracker
+function startSessionMonitor() {
+    // Update session activity every 5 minutes
+    if (sessionUpdateInterval) {
+        clearInterval(sessionUpdateInterval);
+    }
+    
+    sessionUpdateInterval = setInterval(() => {
+        authManager.updateSessionActivity();
+    }, 5 * 60 * 1000); // 5 minutes
+    
+    // Also update on user activity
+    const activityEvents = ['click', 'keypress', 'mousemove', 'scroll'];
+    let lastActivity = Date.now();
+    
+    activityEvents.forEach(event => {
+        document.addEventListener(event, () => {
+            const now = Date.now();
+            // Only update if more than 1 minute has passed since last update
+            if (now - lastActivity > 60000) {
+                lastActivity = now;
+                authManager.updateSessionActivity();
+            }
+        }, { passive: true });
+    });
+}
+
+// Stop session activity tracker
+function stopSessionMonitor() {
+    if (sessionUpdateInterval) {
+        clearInterval(sessionUpdateInterval);
+        sessionUpdateInterval = null;
+    }
+}
+
 // Initialize
 async function init() {
+    console.log('=== File Manager Initializing ===');
     try {
+        console.log('Initializing authManager...');
         await authManager.init();
+        console.log('Initializing fileDB...');
         await fileDB.init();
         
         // Check if user is logged in
+        console.log('Checking for existing session...');
         const user = await authManager.getCurrentUser();
         if (!user) {
+            console.log('No user session found, showing login screen');
             showLoginScreen();
             return;
         }
 
+        console.log('User session restored:', user.username);
+        // Make sure currentUser is set
+        authManager.currentUser = user;
         fileDB.setUser(user.username);
         await loadFilesFromDB();
         await updateStorageInfo();
         renderFiles();
         setupEventListeners();
         updateUserInfo(user);
-        console.log('File Manager initialized with IndexedDB for user:', user.username);
+        startSessionMonitor();
+        console.log('File Manager initialized successfully for user:', user.username);
     } catch (error) {
         console.error('Error initializing file manager:', error);
         showLoginScreen();
@@ -573,6 +726,7 @@ function updateUserInfo(user) {
                 <div style="width: 10px; height: 10px; background: ${user.avatar}; box-shadow: 0 0 10px ${user.avatar};"></div>
                 <span style="text-transform: uppercase; letter-spacing: 1px;">${user.username}</span>
                 ${isAdmin ? '<span style="color: #ff0000; font-size: 10px;">[ADMIN]</span>' : ''}
+                ${isAdmin ? '<button class="btn btn-secondary" onclick="showChangePasswordModal()" style="padding: 5px 10px; font-size: 11px;">[CHANGE PASSWORD]</button>' : ''}
                 ${isAdmin ? '<button class="btn btn-secondary" onclick="showAdminPanel()" style="padding: 5px 10px; font-size: 11px;">[ADMIN PANEL]</button>' : ''}
                 <button class="btn btn-secondary" onclick="handleLogout()" style="padding: 5px 10px; font-size: 11px;">[LOGOUT]</button>
             </div>
@@ -580,74 +734,262 @@ function updateUserInfo(user) {
     }
 }
 
+// Validation and Message Functions
+function showAuthMessage(formType, message, type = 'error') {
+    const messageEl = document.getElementById(`${formType}Message`);
+    messageEl.textContent = `// ${message.toUpperCase()}`;
+    messageEl.className = `auth-message ${type}`;
+    messageEl.style.display = 'block';
+    
+    // Auto-hide success messages after 3 seconds
+    if (type === 'success') {
+        setTimeout(() => {
+            messageEl.style.display = 'none';
+        }, 3000);
+    }
+}
+
+function hideAuthMessage(formType) {
+    const messageEl = document.getElementById(`${formType}Message`);
+    messageEl.style.display = 'none';
+}
+
+function showFieldError(fieldId, message) {
+    const errorEl = document.getElementById(`${fieldId}Error`);
+    const inputEl = document.getElementById(fieldId);
+    
+    if (errorEl && inputEl) {
+        errorEl.textContent = message ? `// ${message}` : '';
+        if (message) {
+            inputEl.classList.add('error');
+            inputEl.classList.remove('success');
+        } else {
+            inputEl.classList.remove('error');
+        }
+    }
+}
+
+function clearFieldError(fieldId) {
+    const errorEl = document.getElementById(`${fieldId}Error`);
+    const inputEl = document.getElementById(fieldId);
+    
+    if (errorEl) errorEl.textContent = '';
+    if (inputEl) {
+        inputEl.classList.remove('error');
+    }
+}
+
+function markFieldSuccess(fieldId) {
+    const inputEl = document.getElementById(fieldId);
+    if (inputEl) {
+        inputEl.classList.remove('error');
+        inputEl.classList.add('success');
+    }
+}
+
+function clearAllErrors(formType) {
+    const form = document.getElementById(`${formType}Form`);
+    if (form) {
+        const inputs = form.querySelectorAll('.form-input');
+        inputs.forEach(input => {
+            input.classList.remove('error', 'success');
+        });
+        const errors = form.querySelectorAll('.field-error');
+        errors.forEach(error => error.textContent = '');
+    }
+    hideAuthMessage(formType);
+}
+
+function validateEmail(email) {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(email);
+}
+
+function validateUsername(username) {
+    // Username must be 3-20 characters, alphanumeric and underscore only
+    const re = /^[a-zA-Z0-9_]{3,20}$/;
+    return re.test(username);
+}
+
+function validatePassword(password) {
+    return password.length >= 4;
+}
+
 // Handle login
 async function handleLogin(e) {
     e.preventDefault();
+    clearAllErrors('login');
+    
     const username = document.getElementById('loginUsername').value.trim();
     const password = document.getElementById('loginPassword').value;
 
-    if (!username || !password) {
-        showStatus('Please enter username and password', 'error');
+    // Validation
+    let hasError = false;
+
+    if (!username) {
+        showFieldError('loginUsername', 'USERNAME_REQUIRED');
+        hasError = true;
+    } else if (!validateUsername(username)) {
+        showFieldError('loginUsername', 'INVALID_USERNAME_FORMAT');
+        hasError = true;
+    } else {
+        markFieldSuccess('loginUsername');
+    }
+
+    if (!password) {
+        showFieldError('loginPassword', 'PASSWORD_REQUIRED');
+        hasError = true;
+    } else if (password.length < 4) {
+        showFieldError('loginPassword', 'PASSWORD_TOO_SHORT');
+        hasError = true;
+    } else {
+        markFieldSuccess('loginPassword');
+    }
+
+    if (hasError) {
+        showAuthMessage('login', 'PLEASE_FIX_ERRORS_ABOVE', 'error');
         return;
     }
 
+    // Show loading state
+    showAuthMessage('login', 'AUTHENTICATING...', 'info');
+
     try {
         const user = await authManager.login(username, password);
+        authManager.currentUser = user; // Ensure it's set
         fileDB.setUser(user.username);
-        hideLoginScreen();
-        await loadFilesFromDB();
-        await updateStorageInfo();
-        renderFiles();
-        setupEventListeners();
-        updateUserInfo(user);
-        showStatus(`Welcome back, ${user.username}!`);
+        
+        showAuthMessage('login', 'ACCESS_GRANTED', 'success');
+        
+        // Small delay to show success message
+        setTimeout(async () => {
+            hideLoginScreen();
+            await loadFilesFromDB();
+            await updateStorageInfo();
+            renderFiles();
+            setupEventListeners();
+            updateUserInfo(user);
+            startSessionMonitor();
+            showStatus(`Welcome back, ${user.username}!`);
+        }, 500);
     } catch (error) {
-        showStatus(error.message, 'error');
+        console.error('Login error:', error);
+        if (error.message.includes('not found')) {
+            showFieldError('loginUsername', 'USER_NOT_FOUND');
+            showAuthMessage('login', 'USER_DOES_NOT_EXIST', 'error');
+        } else if (error.message.includes('password')) {
+            showFieldError('loginPassword', 'INCORRECT_PASSWORD');
+            showAuthMessage('login', 'INVALID_CREDENTIALS', 'error');
+        } else {
+            showAuthMessage('login', error.message.toUpperCase().replace(/ /g, '_'), 'error');
+        }
     }
 }
 
 // Handle registration
 async function handleRegister(e) {
     e.preventDefault();
+    clearAllErrors('register');
+    
     const username = document.getElementById('registerUsername').value.trim();
     const email = document.getElementById('registerEmail').value.trim();
     const password = document.getElementById('registerPassword').value;
     const confirmPassword = document.getElementById('registerConfirmPassword').value;
 
-    if (!username || !email || !password) {
-        showStatus('Please fill all fields', 'error');
+    // Validation
+    let hasError = false;
+
+    // Username validation
+    if (!username) {
+        showFieldError('registerUsername', 'USERNAME_REQUIRED');
+        hasError = true;
+    } else if (!validateUsername(username)) {
+        showFieldError('registerUsername', 'USERNAME_MUST_BE_3-20_CHARS_(A-Z_0-9_UNDERSCORE)');
+        hasError = true;
+    } else if (username.toLowerCase() === 'admin' || username.toLowerCase() === 'root') {
+        showFieldError('registerUsername', 'USERNAME_RESERVED');
+        hasError = true;
+    } else {
+        markFieldSuccess('registerUsername');
+    }
+
+    // Email validation
+    if (!email) {
+        showFieldError('registerEmail', 'EMAIL_REQUIRED');
+        hasError = true;
+    } else if (!validateEmail(email)) {
+        showFieldError('registerEmail', 'INVALID_EMAIL_FORMAT');
+        hasError = true;
+    } else {
+        markFieldSuccess('registerEmail');
+    }
+
+    // Password validation
+    if (!password) {
+        showFieldError('registerPassword', 'PASSWORD_REQUIRED');
+        hasError = true;
+    } else if (!validatePassword(password)) {
+        showFieldError('registerPassword', 'PASSWORD_MUST_BE_AT_LEAST_4_CHARS');
+        hasError = true;
+    } else if (password.length > 50) {
+        showFieldError('registerPassword', 'PASSWORD_TOO_LONG_(MAX_50)');
+        hasError = true;
+    } else {
+        markFieldSuccess('registerPassword');
+    }
+
+    // Confirm password validation
+    if (!confirmPassword) {
+        showFieldError('registerConfirmPassword', 'CONFIRMATION_REQUIRED');
+        hasError = true;
+    } else if (password !== confirmPassword) {
+        showFieldError('registerConfirmPassword', 'PASSWORDS_DO_NOT_MATCH');
+        hasError = true;
+    } else {
+        markFieldSuccess('registerConfirmPassword');
+    }
+
+    if (hasError) {
+        showAuthMessage('register', 'PLEASE_FIX_ERRORS_ABOVE', 'error');
         return;
     }
 
-    if (password !== confirmPassword) {
-        showStatus('Passwords do not match', 'error');
-        return;
-    }
-
-    if (password.length < 4) {
-        showStatus('Password must be at least 4 characters', 'error');
-        return;
-    }
+    // Show loading state
+    showAuthMessage('register', 'CREATING_ACCOUNT...', 'info');
 
     try {
         const user = await authManager.register(username, password, email);
-        await authManager.login(username, password);
-        fileDB.setUser(user.username);
-        hideLoginScreen();
-        await loadFilesFromDB();
-        await updateStorageInfo();
-        renderFiles();
-        setupEventListeners();
-        updateUserInfo(user);
-        showStatus(`Account created! Welcome, ${user.username}!`);
+        showAuthMessage('register', 'ACCOUNT_CREATED_SUCCESSFULLY', 'success');
+        
+        // Auto-login after short delay
+        setTimeout(async () => {
+            await authManager.login(username, password);
+            authManager.currentUser = user;
+            fileDB.setUser(user.username);
+            hideLoginScreen();
+            await loadFilesFromDB();
+            await updateStorageInfo();
+            renderFiles();
+            setupEventListeners();
+            updateUserInfo(user);
+            startSessionMonitor();
+            showStatus(`Welcome, ${user.username}! Your account has been created.`);
+        }, 800);
     } catch (error) {
-        showStatus(error.message, 'error');
+        console.error('Registration error:', error);
+        if (error.message.includes('already exists')) {
+            showFieldError('registerUsername', 'USERNAME_TAKEN');
+            showAuthMessage('register', 'USERNAME_ALREADY_EXISTS', 'error');
+        } else {
+            showAuthMessage('register', error.message.toUpperCase().replace(/ /g, '_'), 'error');
+        }
     }
 }
 
 // Handle logout
 async function handleLogout() {
     if (confirm('Are you sure you want to logout?')) {
+        stopSessionMonitor();
         await authManager.logout();
         files = [];
         currentPath = 'home';
@@ -665,15 +1007,268 @@ function toggleAuthForm() {
     const toggleLink = document.getElementById('toggleLink');
     
     if (loginForm.style.display === 'none') {
+        // Switch to login
         loginForm.style.display = 'block';
         registerForm.style.display = 'none';
         toggleText.textContent = '// NEW USER?';
         toggleLink.textContent = '[REGISTER]';
+        
+        // Clear register form errors
+        clearAllErrors('register');
+        document.getElementById('registerForm').reset();
     } else {
+        // Switch to register
         loginForm.style.display = 'none';
         registerForm.style.display = 'block';
         toggleText.textContent = '// HAVE AN ACCOUNT?';
         toggleLink.textContent = '[LOGIN]';
+        
+        // Clear login form errors
+        clearAllErrors('login');
+        document.getElementById('loginForm').reset();
+    }
+}
+
+// Show Forgot Password Modal
+function showForgotPasswordModal() {
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('forgotPasswordModal').style.display = 'flex';
+    
+    // Clear form
+    document.getElementById('recoveryUsername').value = 'admin';
+    document.getElementById('recoveryCode').value = '';
+    document.getElementById('recoveryNewPassword').value = '';
+    document.getElementById('recoveryConfirmPassword').value = '';
+    
+    // Clear errors
+    ['recoveryUsername', 'recoveryCode', 'recoveryNewPassword', 'recoveryConfirmPassword'].forEach(id => {
+        const errorEl = document.getElementById(`${id}Error`);
+        const inputEl = document.getElementById(id);
+        if (errorEl) errorEl.textContent = '';
+        if (inputEl) inputEl.classList.remove('error', 'success');
+    });
+    
+    const messageEl = document.getElementById('forgotPasswordMessage');
+    if (messageEl) messageEl.style.display = 'none';
+}
+
+// Close Forgot Password Modal
+function closeForgotPasswordModal() {
+    document.getElementById('forgotPasswordModal').style.display = 'none';
+    document.getElementById('loginScreen').style.display = 'flex';
+}
+
+// Generate Recovery Code
+async function generateRecoveryCode() {
+    const username = document.getElementById('recoveryUsername').value.trim();
+    if (!username) {
+        showForgotPasswordMessage('ENTER_USERNAME_FIRST', 'error');
+        return;
+    }
+    
+    // SECURITY: Block admin recovery code generation
+    if (username.toLowerCase() === 'admin') {
+        showFieldError('recoveryUsername', 'ADMIN_RECOVERY_NOT_ALLOWED');
+        showForgotPasswordMessage('ADMIN_PASSWORD_CANNOT_BE_RECOVERED', 'error');
+        console.error('%c✗ Admin recovery code generation blocked for security', 'color: #ff0000; font-weight: bold;');
+        console.warn('%c⚠️ If you forgot admin password:', 'color: #ffaa00; font-weight: bold;');
+        console.warn('%c1. Export data backup before logging out (if logged in)', 'color: #ffaa00;');
+        console.warn('%c2. Clear all data from Admin Panel', 'color: #ffaa00;');
+        console.warn('%c3. Or import a previous backup to restore access', 'color: #ffaa00;');
+        return;
+    }
+    
+    // Check if user exists
+    try {
+        const transaction = authManager.db.transaction(['users'], 'readonly');
+        const store = transaction.objectStore('users');
+        
+        const user = await new Promise((resolve) => {
+            const request = store.get(username);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => resolve(null);
+        });
+        
+        if (!user) {
+            showFieldError('recoveryUsername', 'USER_NOT_FOUND');
+            showForgotPasswordMessage('USER_DOES_NOT_EXIST', 'error');
+            return;
+        }
+        
+        // Check if user has email
+        if (!user.email) {
+            showForgotPasswordMessage('USER_HAS_NO_EMAIL_REGISTERED', 'error');
+            return;
+        }
+        
+        // Generate a 6-digit code based on timestamp and username
+        const timestamp = Date.now();
+        const userHash = username.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        const code = Math.floor(((timestamp + userHash) % 900000) + 100000).toString();
+        
+        // Store in session storage temporarily (valid for 10 minutes)
+        const expiryTime = Date.now() + (10 * 60 * 1000);
+        sessionStorage.setItem(`recoveryCode_${username}`, code);
+        sessionStorage.setItem(`recoveryCodeExpiry_${username}`, expiryTime);
+        
+        // Log to console with styling
+        console.clear();
+        console.log('%c╔════════════════════════════════════════╗', 'color: #00ff00; font-weight: bold;');
+        console.log('%c║   PASSWORD RECOVERY CODE GENERATED    ║', 'color: #00ff00; font-weight: bold;');
+        console.log('%c╠════════════════════════════════════════╣', 'color: #00ff00; font-weight: bold;');
+        console.log('%c║                                        ║', 'color: #00ff00;');
+        console.log(`%c║   USERNAME: ${username.padEnd(25)}║`, 'color: #00ff00;');
+        console.log(`%c║   EMAIL:    ${user.email.padEnd(25)}║`, 'color: #00ff00;');
+        console.log(`%c║   CODE:     ${code.padEnd(25)}║`, 'color: #00ff00; font-size: 16px; font-weight: bold;');
+        console.log('%c║                                        ║', 'color: #00ff00;');
+        console.log(`%c║   Valid for: 10 minutes                ║`, 'color: #00ff00;');
+        console.log('%c║                                        ║', 'color: #00ff00;');
+        console.log('%c╚════════════════════════════════════════╝', 'color: #00ff00; font-weight: bold;');
+        console.log('%c⚠️ This code will expire in 10 minutes', 'color: #ffaa00; font-weight: bold;');
+        console.log('%c📋 Copy this code and paste it in the recovery form', 'color: #00ffff;');
+        console.log('%c🔒 This code is tied to username: ' + username, 'color: #00ffff;');
+        
+        showForgotPasswordMessage(`CODE_SENT_TO_${user.email.toUpperCase()}_AND_CONSOLE`, 'success');
+    } catch (error) {
+        console.error('Error generating recovery code:', error);
+        showForgotPasswordMessage('ERROR_GENERATING_CODE', 'error');
+    }
+}
+
+// Show message in forgot password modal
+function showForgotPasswordMessage(message, type = 'error') {
+    const messageEl = document.getElementById('forgotPasswordMessage');
+    messageEl.textContent = `// ${message.toUpperCase()}`;
+    messageEl.className = `auth-message ${type}`;
+    messageEl.style.display = 'block';
+}
+
+// Confirm Password Recovery
+async function confirmPasswordRecovery() {
+    // Clear errors
+    ['recoveryUsername', 'recoveryCode', 'recoveryNewPassword', 'recoveryConfirmPassword'].forEach(id => {
+        const errorEl = document.getElementById(`${id}Error`);
+        const inputEl = document.getElementById(id);
+        if (errorEl) errorEl.textContent = '';
+        if (inputEl) inputEl.classList.remove('error', 'success');
+    });
+    
+    const username = document.getElementById('recoveryUsername').value.trim();
+    const code = document.getElementById('recoveryCode').value.trim().toUpperCase();
+    const newPassword = document.getElementById('recoveryNewPassword').value;
+    const confirmPassword = document.getElementById('recoveryConfirmPassword').value;
+    
+    let hasError = false;
+    
+    // Validate username
+    if (!username) {
+        showFieldError('recoveryUsername', 'USERNAME_REQUIRED');
+        hasError = true;
+    }
+    
+    // Validate code
+    if (!code) {
+        showFieldError('recoveryCode', 'RECOVERY_CODE_REQUIRED');
+        hasError = true;
+    }
+    
+    // Validate new password
+    if (!newPassword) {
+        showFieldError('recoveryNewPassword', 'PASSWORD_REQUIRED');
+        hasError = true;
+    } else if (newPassword.length < 4) {
+        showFieldError('recoveryNewPassword', 'MIN_4_CHARACTERS');
+        hasError = true;
+    }
+    
+    // Validate confirm password
+    if (!confirmPassword) {
+        showFieldError('recoveryConfirmPassword', 'CONFIRMATION_REQUIRED');
+        hasError = true;
+    } else if (newPassword !== confirmPassword) {
+        showFieldError('recoveryConfirmPassword', 'PASSWORDS_DO_NOT_MATCH');
+        hasError = true;
+    }
+    
+    if (hasError) {
+        showForgotPasswordMessage('PLEASE_FIX_ERRORS_ABOVE', 'error');
+        return;
+    }
+    
+    showForgotPasswordMessage('VERIFYING_RECOVERY_CODE...', 'info');
+    
+    try {
+        // SECURITY: Block admin password recovery completely
+        if (username.toLowerCase() === 'admin') {
+            showFieldError('recoveryUsername', 'ADMIN_RECOVERY_BLOCKED');
+            showForgotPasswordMessage('ADMIN_PASSWORD_CANNOT_BE_RECOVERED_FOR_SECURITY', 'error');
+            console.error('%c✗ Admin password recovery blocked for security', 'color: #ff0000; font-weight: bold;');
+            return;
+        }
+        
+        // Check if user exists
+        const transaction = authManager.db.transaction(['users'], 'readonly');
+        const store = transaction.objectStore('users');
+        
+        const user = await new Promise((resolve) => {
+            const request = store.get(username);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => resolve(null);
+        });
+        
+        if (!user) {
+            showFieldError('recoveryUsername', 'USER_NOT_FOUND');
+            showForgotPasswordMessage('USER_DOES_NOT_EXIST', 'error');
+            return;
+        }
+        
+        // Verify recovery code with username-specific storage
+        const storedCode = sessionStorage.getItem(`recoveryCode_${username}`);
+        const expiryTime = sessionStorage.getItem(`recoveryCodeExpiry_${username}`);
+        
+        let isValid = false;
+        
+        // Check session recovery code (username-specific)
+        if (storedCode && expiryTime) {
+            // Check if code is expired
+            if (Date.now() > parseInt(expiryTime)) {
+                showFieldError('recoveryCode', 'CODE_EXPIRED_GENERATE_NEW');
+                showForgotPasswordMessage('RECOVERY_CODE_EXPIRED', 'error');
+                return;
+            }
+            
+            // Verify code matches
+            if (code === storedCode) {
+                isValid = true;
+                console.log('%c✓ Recovery code verified for user: ' + username, 'color: #00ff00; font-weight: bold;');
+            }
+        }
+        
+        if (!isValid) {
+            showFieldError('recoveryCode', 'INVALID_RECOVERY_CODE');
+            showForgotPasswordMessage('RECOVERY_CODE_INCORRECT', 'error');
+            return;
+        }
+        
+        // Reset password
+        await authManager.updateUserPassword(username, newPassword);
+        
+        // Clear recovery codes for this specific user
+        sessionStorage.removeItem(`recoveryCode_${username}`);
+        sessionStorage.removeItem(`recoveryCodeExpiry_${username}`);
+        
+        showForgotPasswordMessage('PASSWORD_RESET_SUCCESSFUL', 'success');
+        
+        // Redirect to login after 1.5 seconds
+        setTimeout(() => {
+            closeForgotPasswordModal();
+            document.getElementById('loginUsername').value = username;
+            showStatus('Password reset successfully! Please login with your new password.');
+        }, 1500);
+        
+    } catch (error) {
+        console.error('Error during password recovery:', error);
+        showForgotPasswordMessage('ERROR_RESETTING_PASSWORD', 'error');
     }
 }
 
@@ -1160,11 +1755,18 @@ function setupEventListeners() {
 
 // Admin Panel Functions
 async function showAdminPanel() {
-    const user = authManager.currentUser;
-    console.log('Current user:', user);
-    console.log('Is admin?', authManager.isAdmin(user));
+    // Get the current user from authManager
+    let user = authManager.currentUser;
     
-    if (!authManager.isAdmin(user)) {
+    // If not set, try to get from database
+    if (!user) {
+        user = await authManager.getCurrentUser();
+    }
+    
+    console.log('Current user:', user);
+    console.log('Is admin?', user ? authManager.isAdmin(user) : 'No user');
+    
+    if (!user || !authManager.isAdmin(user)) {
         showStatus('Access denied: Admin only', 'error');
         return;
     }
@@ -1226,7 +1828,7 @@ function renderAdminPanel(users) {
                     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
                         <div style="width: 8px; height: 8px; background: ${user.avatar}; box-shadow: 0 0 5px ${user.avatar};"></div>
                         <span style="font-weight: 700; color: #00ff00;">${user.username}</span>
-                        <span style="font-size: 10px; padding: 2px 6px; border: 1px solid ${user.role === 'admin' ? '#ff0000' : '#00ff00'}; color: ${user.role === 'admin' ? '#ff0000' : '#00ff00'};">${user.role.toUpperCase()}</span>
+                        <span style="font-size: 10px; padding: 2px 6px; border: 1px solid ${(user.role || 'user') === 'admin' ? '#ff0000' : '#00ff00'}; color: ${(user.role || 'user') === 'admin' ? '#ff0000' : '#00ff00'};">${(user.role || 'user').toUpperCase()}</span>
                     </div>
                     <div style="font-size: 11px; color: rgba(0, 255, 0, 0.7);">
                         📧 ${user.email} | 📁 ${user.fileCount} files | 💾 ${formatFileSize(user.storageSize)} | 📅 ${new Date(user.createdAt).toLocaleDateString()}
@@ -1237,8 +1839,8 @@ function renderAdminPanel(users) {
                     <button class="btn btn-secondary" onclick="adminResetPassword('${user.username}')" style="padding: 5px 10px; font-size: 10px;">
                         [RESET PWD]
                     </button>
-                    <button class="btn btn-secondary" onclick="adminToggleRole('${user.username}', '${user.role}')" style="padding: 5px 10px; font-size: 10px;">
-                        [${user.role === 'admin' ? 'DEMOTE' : 'PROMOTE'}]
+                    <button class="btn btn-secondary" onclick="adminToggleRole('${user.username}', '${user.role || 'user'}')" style="padding: 5px 10px; font-size: 10px;">
+                        [${(user.role || 'user') === 'admin' ? 'DEMOTE' : 'PROMOTE'}]
                     </button>
                     <button class="btn btn-cancel" onclick="adminDeleteUser('${user.username}')" style="padding: 5px 10px; font-size: 10px; border-color: #ff0000; color: #ff0000;">
                         [DELETE]
@@ -1319,5 +1921,602 @@ async function adminResetPassword(username) {
     }
 }
 
+// Export all data
+async function exportAllData() {
+    if (!confirm('Export all users, files, and settings to a JSON file?')) return;
+    
+    try {
+        showStatus('Exporting data...', 'info');
+        
+        const exportData = {
+            version: '1.0',
+            exportDate: new Date().toISOString(),
+            users: [],
+            sessions: [],
+            userSettings: [],
+            files: [],
+            fileData: []
+        };
+        
+        // Export users
+        const usersTransaction = authManager.db.transaction(['users'], 'readonly');
+        const usersStore = usersTransaction.objectStore('users');
+        const usersRequest = usersStore.getAll();
+        
+        await new Promise((resolve, reject) => {
+            usersRequest.onsuccess = () => {
+                exportData.users = usersRequest.result;
+                resolve();
+            };
+            usersRequest.onerror = () => reject(usersRequest.error);
+        });
+        
+        // Export sessions
+        const sessionsTransaction = authManager.db.transaction(['sessions'], 'readonly');
+        const sessionsStore = sessionsTransaction.objectStore('sessions');
+        const sessionsRequest = sessionsStore.getAll();
+        
+        await new Promise((resolve, reject) => {
+            sessionsRequest.onsuccess = () => {
+                exportData.sessions = sessionsRequest.result;
+                resolve();
+            };
+            sessionsRequest.onerror = () => reject(sessionsRequest.error);
+        });
+        
+        // Export user settings
+        const settingsTransaction = authManager.db.transaction(['userSettings'], 'readonly');
+        const settingsStore = settingsTransaction.objectStore('userSettings');
+        const settingsRequest = settingsStore.getAll();
+        
+        await new Promise((resolve, reject) => {
+            settingsRequest.onsuccess = () => {
+                exportData.userSettings = settingsRequest.result;
+                resolve();
+            };
+            settingsRequest.onerror = () => reject(settingsRequest.error);
+        });
+        
+        // Export files
+        const filesTransaction = fileDB.db.transaction(['files'], 'readonly');
+        const filesStore = filesTransaction.objectStore('files');
+        const filesRequest = filesStore.getAll();
+        
+        await new Promise((resolve, reject) => {
+            filesRequest.onsuccess = () => {
+                exportData.files = filesRequest.result;
+                resolve();
+            };
+            filesRequest.onerror = () => reject(filesRequest.error);
+        });
+        
+        // Export file data (blobs)
+        const fileDataTransaction = fileDB.db.transaction(['fileData'], 'readonly');
+        const fileDataStore = fileDataTransaction.objectStore('fileData');
+        const fileDataRequest = fileDataStore.getAll();
+        
+        await new Promise((resolve, reject) => {
+            fileDataRequest.onsuccess = async () => {
+                // Convert blobs to base64
+                const fileDataArray = fileDataRequest.result;
+                for (const item of fileDataArray) {
+                    if (item.blob instanceof Blob) {
+                        const reader = new FileReader();
+                        const base64 = await new Promise((res) => {
+                            reader.onloadend = () => res(reader.result);
+                            reader.readAsDataURL(item.blob);
+                        });
+                        exportData.fileData.push({
+                            id: item.id,
+                            data: base64,
+                            type: item.blob.type
+                        });
+                    }
+                }
+                resolve();
+            };
+            fileDataRequest.onerror = () => reject(fileDataRequest.error);
+        });
+        
+        // Create download
+        const dataStr = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `filemanager_backup_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showStatus('Data exported successfully!');
+    } catch (error) {
+        console.error('Error exporting data:', error);
+        showStatus('Error exporting data: ' + error.message, 'error');
+    }
+}
+
+// Import all data
+function importAllData() {
+    if (!confirm('Import data from file? This will REPLACE all existing data!')) return;
+    document.getElementById('importFileInput').click();
+}
+
+// Handle import file
+async function handleImportFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    try {
+        showStatus('Importing data...', 'info');
+        
+        const text = await file.text();
+        const importData = JSON.parse(text);
+        
+        if (!importData.version || !importData.users) {
+            throw new Error('Invalid backup file format');
+        }
+        
+        // Clear existing data first
+        await clearAllDataSilent();
+        
+        // Import users
+        const usersTransaction = authManager.db.transaction(['users'], 'readwrite');
+        const usersStore = usersTransaction.objectStore('users');
+        for (const user of importData.users) {
+            await new Promise((resolve, reject) => {
+                const request = usersStore.add(user);
+                request.onsuccess = () => resolve();
+                request.onerror = () => resolve(); // Continue on duplicate
+            });
+        }
+        
+        // Import sessions
+        if (importData.sessions) {
+            const sessionsTransaction = authManager.db.transaction(['sessions'], 'readwrite');
+            const sessionsStore = sessionsTransaction.objectStore('sessions');
+            for (const session of importData.sessions) {
+                await new Promise((resolve, reject) => {
+                    const request = sessionsStore.add(session);
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => resolve();
+                });
+            }
+        }
+        
+        // Import user settings
+        if (importData.userSettings) {
+            const settingsTransaction = authManager.db.transaction(['userSettings'], 'readwrite');
+            const settingsStore = settingsTransaction.objectStore('userSettings');
+            for (const settings of importData.userSettings) {
+                await new Promise((resolve, reject) => {
+                    const request = settingsStore.add(settings);
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => resolve();
+                });
+            }
+        }
+        
+        // Import files
+        if (importData.files) {
+            const filesTransaction = fileDB.db.transaction(['files'], 'readwrite');
+            const filesStore = filesTransaction.objectStore('files');
+            for (const file of importData.files) {
+                await new Promise((resolve, reject) => {
+                    const request = filesStore.add(file);
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => resolve();
+                });
+            }
+        }
+        
+        // Import file data (convert base64 back to blobs)
+        if (importData.fileData) {
+            const fileDataTransaction = fileDB.db.transaction(['fileData'], 'readwrite');
+            const fileDataStore = fileDataTransaction.objectStore('fileData');
+            for (const item of importData.fileData) {
+                // Convert base64 to blob
+                const response = await fetch(item.data);
+                const blob = await response.blob();
+                
+                await new Promise((resolve, reject) => {
+                    const request = fileDataStore.add({ id: item.id, blob: blob });
+                    request.onsuccess = () => resolve();
+                    request.onerror = () => resolve();
+                });
+            }
+        }
+        
+        showStatus('Data imported successfully! Reloading page...');
+        setTimeout(() => {
+            location.reload();
+        }, 1500);
+        
+    } catch (error) {
+        console.error('Error importing data:', error);
+        showStatus('Error importing data: ' + error.message, 'error');
+    }
+    
+    // Reset file input
+    event.target.value = '';
+}
+
+// Clear all data
+async function clearAllData() {
+    if (!confirm('⚠️ WARNING: This will DELETE ALL users, files, and settings! Are you absolutely sure?')) return;
+    if (!confirm('This action CANNOT be undone! Click OK to proceed with deletion.')) return;
+    
+    try {
+        showStatus('Clearing all data...', 'info');
+        await clearAllDataSilent();
+        showStatus('All data cleared! Reloading...');
+        setTimeout(() => {
+            location.reload();
+        }, 1000);
+    } catch (error) {
+        console.error('Error clearing data:', error);
+        showStatus('Error clearing data: ' + error.message, 'error');
+    }
+}
+
+// Clear all data silently (helper function)
+async function clearAllDataSilent() {
+    // Clear auth database
+    const authStores = ['users', 'sessions', 'userSettings'];
+    for (const storeName of authStores) {
+        const transaction = authManager.db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        await new Promise((resolve, reject) => {
+            const request = store.clear();
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+    
+    // Clear file database
+    const fileStores = ['files', 'fileData'];
+    for (const storeName of fileStores) {
+        const transaction = fileDB.db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        await new Promise((resolve, reject) => {
+            const request = store.clear();
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+    
+    // Clear localStorage
+    localStorage.clear();
+}
+
+// Show Change Password Modal
+function showChangePasswordModal() {
+    // Clear form and errors
+    document.getElementById('currentPassword').value = '';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('confirmNewPassword').value = '';
+    clearChangePasswordErrors();
+    
+    // Show modal
+    document.getElementById('changePasswordModal').style.display = 'flex';
+}
+
+// Close Change Password Modal
+function closeChangePasswordModal() {
+    document.getElementById('changePasswordModal').style.display = 'none';
+    clearChangePasswordErrors();
+}
+
+// Clear change password errors
+function clearChangePasswordErrors() {
+    const fields = ['currentPassword', 'newPassword', 'confirmNewPassword'];
+    fields.forEach(fieldId => {
+        const errorEl = document.getElementById(`${fieldId}Error`);
+        const inputEl = document.getElementById(fieldId);
+        if (errorEl) errorEl.textContent = '';
+        if (inputEl) inputEl.classList.remove('error', 'success');
+    });
+    
+    const messageEl = document.getElementById('changePasswordMessage');
+    if (messageEl) messageEl.style.display = 'none';
+}
+
+// Show message in change password modal
+function showChangePasswordMessage(message, type = 'error') {
+    const messageEl = document.getElementById('changePasswordMessage');
+    messageEl.textContent = `// ${message.toUpperCase()}`;
+    messageEl.className = `auth-message ${type}`;
+    messageEl.style.display = 'block';
+}
+
+// Confirm Change Password
+async function confirmChangePassword() {
+    clearChangePasswordErrors();
+    
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmNewPassword = document.getElementById('confirmNewPassword').value;
+    
+    let hasError = false;
+    
+    // Validate current password
+    if (!currentPassword) {
+        showFieldError('currentPassword', 'CURRENT_PASSWORD_REQUIRED');
+        hasError = true;
+    }
+    
+    // Validate new password
+    if (!newPassword) {
+        showFieldError('newPassword', 'NEW_PASSWORD_REQUIRED');
+        hasError = true;
+    } else if (newPassword.length < 4) {
+        showFieldError('newPassword', 'PASSWORD_MUST_BE_AT_LEAST_4_CHARS');
+        hasError = true;
+    } else if (newPassword.length > 50) {
+        showFieldError('newPassword', 'PASSWORD_TOO_LONG_(MAX_50)');
+        hasError = true;
+    } else if (newPassword === currentPassword) {
+        showFieldError('newPassword', 'NEW_PASSWORD_MUST_BE_DIFFERENT');
+        hasError = true;
+    }
+    
+    // Validate confirm password
+    if (!confirmNewPassword) {
+        showFieldError('confirmNewPassword', 'CONFIRMATION_REQUIRED');
+        hasError = true;
+    } else if (newPassword !== confirmNewPassword) {
+        showFieldError('confirmNewPassword', 'PASSWORDS_DO_NOT_MATCH');
+        hasError = true;
+    }
+    
+    if (hasError) {
+        showChangePasswordMessage('PLEASE_FIX_ERRORS_ABOVE', 'error');
+        return;
+    }
+    
+    // Show loading
+    showChangePasswordMessage('UPDATING_PASSWORD...', 'info');
+    
+    try {
+        // Verify current password by attempting login
+        const username = authManager.currentUser.username;
+        const hashedCurrentPassword = btoa(currentPassword + username);
+        
+        if (authManager.currentUser.password !== hashedCurrentPassword) {
+            showFieldError('currentPassword', 'INCORRECT_PASSWORD');
+            showChangePasswordMessage('CURRENT_PASSWORD_IS_INCORRECT', 'error');
+            return;
+        }
+        
+        // Update password
+        await authManager.updateUserPassword(username, newPassword);
+        
+        showChangePasswordMessage('PASSWORD_UPDATED_SUCCESSFULLY', 'success');
+        
+        // Log out after 1.5 seconds
+        setTimeout(async () => {
+            closeChangePasswordModal();
+            await handleLogout();
+            showStatus('Password changed successfully. Please login with your new password.');
+        }, 1500);
+        
+    } catch (error) {
+        console.error('Error changing password:', error);
+        showChangePasswordMessage('ERROR_UPDATING_PASSWORD', 'error');
+    }
+}
+
+// Setup real-time form validation
+function setupFormValidation() {
+    // Login form validation
+    const loginUsername = document.getElementById('loginUsername');
+    const loginPassword = document.getElementById('loginPassword');
+    
+    if (loginUsername) {
+        loginUsername.addEventListener('input', (e) => {
+            const value = e.target.value.trim();
+            if (value && !validateUsername(value)) {
+                showFieldError('loginUsername', 'INVALID_FORMAT_(A-Z_0-9_UNDERSCORE_3-20)');
+            } else {
+                clearFieldError('loginUsername');
+                if (value) markFieldSuccess('loginUsername');
+            }
+        });
+        
+        loginUsername.addEventListener('blur', (e) => {
+            const value = e.target.value.trim();
+            if (!value) {
+                clearFieldError('loginUsername');
+                e.target.classList.remove('success');
+            }
+        });
+    }
+    
+    if (loginPassword) {
+        loginPassword.addEventListener('input', (e) => {
+            const value = e.target.value;
+            if (value && value.length < 4) {
+                showFieldError('loginPassword', 'MIN_4_CHARACTERS');
+            } else {
+                clearFieldError('loginPassword');
+                if (value) markFieldSuccess('loginPassword');
+            }
+        });
+        
+        loginPassword.addEventListener('blur', (e) => {
+            if (!e.target.value) {
+                clearFieldError('loginPassword');
+                e.target.classList.remove('success');
+            }
+        });
+    }
+    
+    // Register form validation
+    const registerUsername = document.getElementById('registerUsername');
+    const registerEmail = document.getElementById('registerEmail');
+    const registerPassword = document.getElementById('registerPassword');
+    const registerConfirmPassword = document.getElementById('registerConfirmPassword');
+    
+    if (registerUsername) {
+        registerUsername.addEventListener('input', (e) => {
+            const value = e.target.value.trim();
+            if (value) {
+                if (!validateUsername(value)) {
+                    showFieldError('registerUsername', 'INVALID_FORMAT_(A-Z_0-9_UNDERSCORE_3-20)');
+                } else if (value.toLowerCase() === 'admin' || value.toLowerCase() === 'root') {
+                    showFieldError('registerUsername', 'USERNAME_RESERVED');
+                } else {
+                    clearFieldError('registerUsername');
+                    markFieldSuccess('registerUsername');
+                }
+            } else {
+                clearFieldError('registerUsername');
+                e.target.classList.remove('success');
+            }
+        });
+    }
+    
+    if (registerEmail) {
+        registerEmail.addEventListener('input', (e) => {
+            const value = e.target.value.trim();
+            if (value) {
+                if (!validateEmail(value)) {
+                    showFieldError('registerEmail', 'INVALID_EMAIL_FORMAT');
+                } else {
+                    clearFieldError('registerEmail');
+                    markFieldSuccess('registerEmail');
+                }
+            } else {
+                clearFieldError('registerEmail');
+                e.target.classList.remove('success');
+            }
+        });
+    }
+    
+    if (registerPassword) {
+        registerPassword.addEventListener('input', (e) => {
+            const value = e.target.value;
+            if (value) {
+                if (value.length < 4) {
+                    showFieldError('registerPassword', 'MIN_4_CHARACTERS');
+                } else if (value.length > 50) {
+                    showFieldError('registerPassword', 'MAX_50_CHARACTERS');
+                } else {
+                    clearFieldError('registerPassword');
+                    markFieldSuccess('registerPassword');
+                }
+                
+                // Re-validate confirm password if it has a value
+                if (registerConfirmPassword && registerConfirmPassword.value) {
+                    if (value !== registerConfirmPassword.value) {
+                        showFieldError('registerConfirmPassword', 'PASSWORDS_DO_NOT_MATCH');
+                    } else {
+                        clearFieldError('registerConfirmPassword');
+                        markFieldSuccess('registerConfirmPassword');
+                    }
+                }
+            } else {
+                clearFieldError('registerPassword');
+                e.target.classList.remove('success');
+            }
+        });
+    }
+    
+    if (registerConfirmPassword) {
+        registerConfirmPassword.addEventListener('input', (e) => {
+            const value = e.target.value;
+            const passwordValue = registerPassword ? registerPassword.value : '';
+            
+            if (value) {
+                if (value !== passwordValue) {
+                    showFieldError('registerConfirmPassword', 'PASSWORDS_DO_NOT_MATCH');
+                } else {
+                    clearFieldError('registerConfirmPassword');
+                    markFieldSuccess('registerConfirmPassword');
+                }
+            } else {
+                clearFieldError('registerConfirmPassword');
+                e.target.classList.remove('success');
+            }
+        });
+    }
+    
+    // Change Password form validation
+    const currentPasswordField = document.getElementById('currentPassword');
+    const newPasswordField = document.getElementById('newPassword');
+    const confirmNewPasswordField = document.getElementById('confirmNewPassword');
+    
+    if (currentPasswordField) {
+        currentPasswordField.addEventListener('input', (e) => {
+            const value = e.target.value;
+            if (value) {
+                if (value.length < 4) {
+                    showFieldError('currentPassword', 'MIN_4_CHARACTERS');
+                } else {
+                    clearFieldError('currentPassword');
+                    markFieldSuccess('currentPassword');
+                }
+            } else {
+                clearFieldError('currentPassword');
+                e.target.classList.remove('success');
+            }
+        });
+    }
+    
+    if (newPasswordField) {
+        newPasswordField.addEventListener('input', (e) => {
+            const value = e.target.value;
+            const currentValue = currentPasswordField ? currentPasswordField.value : '';
+            
+            if (value) {
+                if (value.length < 4) {
+                    showFieldError('newPassword', 'MIN_4_CHARACTERS');
+                } else if (value.length > 50) {
+                    showFieldError('newPassword', 'MAX_50_CHARACTERS');
+                } else if (currentValue && value === currentValue) {
+                    showFieldError('newPassword', 'MUST_BE_DIFFERENT_FROM_CURRENT');
+                } else {
+                    clearFieldError('newPassword');
+                    markFieldSuccess('newPassword');
+                }
+                
+                // Re-validate confirm password if it has a value
+                if (confirmNewPasswordField && confirmNewPasswordField.value) {
+                    if (value !== confirmNewPasswordField.value) {
+                        showFieldError('confirmNewPassword', 'PASSWORDS_DO_NOT_MATCH');
+                    } else {
+                        clearFieldError('confirmNewPassword');
+                        markFieldSuccess('confirmNewPassword');
+                    }
+                }
+            } else {
+                clearFieldError('newPassword');
+                e.target.classList.remove('success');
+            }
+        });
+    }
+    
+    if (confirmNewPasswordField) {
+        confirmNewPasswordField.addEventListener('input', (e) => {
+            const value = e.target.value;
+            const newValue = newPasswordField ? newPasswordField.value : '';
+            
+            if (value) {
+                if (value !== newValue) {
+                    showFieldError('confirmNewPassword', 'PASSWORDS_DO_NOT_MATCH');
+                } else {
+                    clearFieldError('confirmNewPassword');
+                    markFieldSuccess('confirmNewPassword');
+                }
+            } else {
+                clearFieldError('confirmNewPassword');
+                e.target.classList.remove('success');
+            }
+        });
+    }
+}
+
 // Initialize app
 init();
+setupFormValidation();
