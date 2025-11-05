@@ -82,6 +82,9 @@
     <div class="container">
         <!-- Header -->
         <div class="header">
+            <button class="btn btn-secondary" onclick="toggleMobileSidebar()" id="mobileMenuBtn" style="display: none;">
+                [☰] MENU
+            </button>
             <h1>$ FILE_MANAGER_V1.0</h1>
             <div class="header-actions">
                 <div id="userInfo" style="margin-right: 20px;"></div>
@@ -108,8 +111,11 @@
 
         <!-- Main Content -->
         <div class="main-content">
+            <!-- Mobile Sidebar Overlay -->
+            <div id="sidebarOverlay" class="sidebar-overlay" onclick="closeMobileSidebar()" style="display: none;"></div>
+            
             <!-- Sidebar -->
-            <div class="sidebar">
+            <div class="sidebar" id="sidebar">
                 <div class="sidebar-section">
                     <div class="sidebar-title">// QUICK ACCESS</div>
                     <div class="sidebar-item active" onclick="filterByType('all')">
