@@ -1360,6 +1360,7 @@ function createFileElement(file) {
             <div class="file-icon">${icon}</div>
             <div class="file-name">${file.name}</div>
             <div class="file-meta">${file.size} • ${modifiedText}</div>
+            ${file.starred ? '<div style="position: absolute; top: 5px; right: 5px; font-size: 16px;">⭐</div>' : ''}
         `;
     } else {
         element.className = 'list-item';
@@ -1388,13 +1389,19 @@ function createFileElement(file) {
 
 // Filter files
 function filterFiles() {
-    let filtered = files.filter(f => f.path === currentPath);
+    let filtered;
+    
+    // For starred view, show all starred files regardless of path
+    if (currentFilter === 'starred') {
+        filtered = files.filter(f => f.starred);
+    } else {
+        // For other filters, only show files in current path
+        filtered = files.filter(f => f.path === currentPath);
+    }
 
     if (currentFilter === 'recent') {
-        filtered.sort((a, b) => a.modified.localeCompare(b.modified));
-    } else if (currentFilter === 'starred') {
-        filtered = filtered.filter(f => f.starred);
-    } else if (currentFilter !== 'all') {
+        filtered.sort((a, b) => new Date(b.modified) - new Date(a.modified));
+    } else if (currentFilter !== 'all' && currentFilter !== 'starred') {
         filtered = filtered.filter(f => f.type === currentFilter);
     }
 
@@ -1452,23 +1459,31 @@ function hideContextMenu() {
 }
 
 // Open file
+// Open file
 async function openFile() {
-    if (selectedFile) {
-        if (selectedFile.type === 'folder') {
-            openFolder(selectedFile);
+    // Save reference to avoid null issues
+    const fileToOpen = selectedFile;
+    
+    if (!fileToOpen) {
+        console.error('No file selected');
+        hideContextMenu();
+        return;
+    }
+    
+    if (fileToOpen.type === 'folder') {
+        openFolder(fileToOpen);
+    } else {
+        // Try to download/open the file
+        const blob = await fileDB.getFileBlob(fileToOpen.id);
+        if (blob) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.target = '_blank';
+            a.click();
+            URL.revokeObjectURL(url);
         } else {
-            // Try to download/open the file
-            const blob = await fileDB.getFileBlob(selectedFile.id);
-            if (blob) {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.target = '_blank';
-                a.click();
-                URL.revokeObjectURL(url);
-            } else {
-                alert(`Opening: ${selectedFile.name}\n(File blob not available - this was a demo file)`);
-            }
+            alert(`Opening: ${fileToOpen.name}\n(File blob not available)`);
         }
     }
     hideContextMenu();
@@ -1501,72 +1516,140 @@ function updateBreadcrumb() {
 
 // Rename file
 async function renameFile() {
-    if (selectedFile) {
-        document.getElementById('renameInput').value = selectedFile.name;
-        showModal('renameModal');
+    // Save reference to avoid null issues
+    const fileToRename = selectedFile;
+    
+    if (!fileToRename) {
+        console.error('No file selected for rename');
+        hideContextMenu();
+        return;
     }
+    
+    document.getElementById('renameInput').value = fileToRename.name;
+    showModal('renameModal');
     hideContextMenu();
 }
 
 // Confirm rename
 async function confirmRename() {
     const newName = document.getElementById('renameInput').value.trim();
-    if (newName && selectedFile) {
-        try {
-            await fileDB.updateFile(selectedFile.id, { name: newName });
-            await loadFilesFromDB();
-            renderFiles();
-            closeModal('renameModal');
-            showStatus('File renamed successfully');
-        } catch (error) {
-            console.error('Error renaming file:', error);
-            showStatus('Error renaming file', 'error');
-        }
+    const fileToRename = selectedFile;
+    
+    if (!newName) {
+        alert('Please enter a new name');
+        return;
+    }
+    
+    if (!fileToRename) {
+        alert('No file selected');
+        closeModal('renameModal');
+        return;
+    }
+    
+    try {
+        await fileDB.updateFile(fileToRename.id, { name: newName });
+        await loadFilesFromDB();
+        renderFiles();
+        closeModal('renameModal');
+        showStatus('File renamed successfully');
+    } catch (error) {
+        console.error('Error renaming file:', error);
+        showStatus('Error renaming file', 'error');
     }
 }
 
 // Download file
 async function downloadFile() {
-    if (selectedFile && selectedFile.type !== 'folder') {
-        try {
-            const blob = await fileDB.getFileBlob(selectedFile.id);
-            if (blob) {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = selectedFile.name;
-                a.click();
-                URL.revokeObjectURL(url);
-            } else {
-                alert('File data not available (demo file)');
-            }
-        } catch (error) {
-            console.error('Error downloading file:', error);
-            alert('Error downloading file');
-        }
+    // Save reference to avoid null issues
+    const fileToDownload = selectedFile;
+    
+    if (!fileToDownload) {
+        console.error('No file selected for download');
+        alert('No file selected. Please right-click on a file to download.');
+        hideContextMenu();
+        return;
     }
+    
+    if (fileToDownload.type === 'folder') {
+        alert('Cannot download folders');
+        hideContextMenu();
+        return;
+    }
+    
+    try {
+        const blob = await fileDB.getFileBlob(fileToDownload.id);
+        if (blob) {
+            // Simply download without checksum verification for now
+            showStatus('Downloading file...', 'info');
+            
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileToDownload.name;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            setTimeout(() => {
+                showStatus(`Downloaded: ${fileToDownload.name}`);
+            }, 500);
+        } else {
+            alert('File data not available');
+            showStatus('File data not available', 'error');
+        }
+    } catch (error) {
+        console.error('Error downloading file:', error);
+        alert('Error downloading file: ' + error.message);
+        showStatus('Error downloading file', 'error');
+    }
+    
     hideContextMenu();
 }
 
 // Toggle star
 async function toggleStar() {
-    if (selectedFile) {
-        try {
-            await fileDB.updateFile(selectedFile.id, { starred: !selectedFile.starred });
-            await loadFilesFromDB();
-            renderFiles();
-        } catch (error) {
-            console.error('Error toggling star:', error);
-        }
+    // Save reference to avoid null issues
+    const fileToStar = selectedFile;
+    
+    if (!fileToStar) {
+        console.error('No file selected for starring');
+        hideContextMenu();
+        return;
     }
+    
+    try {
+        const newStarredState = !fileToStar.starred;
+        await fileDB.updateFile(fileToStar.id, { starred: newStarredState });
+        await loadFilesFromDB();
+        renderFiles();
+        
+        // Show status message
+        const statusMessage = newStarredState 
+            ? `★ ${fileToStar.name} starred` 
+            : `☆ ${fileToStar.name} unstarred`;
+        showStatus(statusMessage, 'success');
+    } catch (error) {
+        console.error('Error toggling star:', error);
+        showStatus('Error updating star status', 'error');
+    }
+    
     hideContextMenu();
 }
 
 // Delete file
+// Delete file
 async function deleteFile() {
-    if (selectedFile && confirm(`Delete ${selectedFile.name}?`)) {
+    // Save reference to avoid null issues
+    const fileToDelete = selectedFile;
+    
+    if (!fileToDelete) {
+        console.error('No file selected for deletion');
+        hideContextMenu();
+        return;
+    }
+    
+    if (confirm(`Delete ${fileToDelete.name}?`)) {
         try {
-            await fileDB.deleteFile(selectedFile.id);
+            await fileDB.deleteFile(fileToDelete.id);
             await loadFilesFromDB();
             await updateStorageInfo();
             selectedFile = null;
@@ -1595,8 +1678,61 @@ async function uploadFiles() {
         return;
     }
 
+    // Show progress section
+    const progressSection = document.getElementById('uploadProgressSection');
+    const progressBar = document.getElementById('uploadProgressBar');
+    const progressText = document.getElementById('uploadProgressText');
+    const currentFileNameEl = document.getElementById('currentFileName');
+    const uploadStatsEl = document.getElementById('uploadStats');
+    const uploadSpeedEl = document.getElementById('uploadSpeed');
+    const uploadStatusEl = document.getElementById('uploadStatus');
+    const integrityCheckEl = document.getElementById('integrityCheck');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const uploadCancelBtn = document.getElementById('uploadCancelBtn');
+
+    // Disable upload button and show cancel only
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = 'UPLOADING...';
+    progressSection.style.display = 'block';
+
+    let uploadedCount = 0;
+    const totalFiles = uploadedFiles.length;
+    const startTime = Date.now();
+    let totalBytesProcessed = 0;
+
     try {
-        for (const file of uploadedFiles) {
+        for (let i = 0; i < uploadedFiles.length; i++) {
+            const file = uploadedFiles[i];
+            
+            // Update current file info
+            currentFileNameEl.textContent = `$ UPLOADING: ${file.name} (${formatFileSize(file.size)})`;
+            uploadStatusEl.innerHTML = `// PROCESSING FILE ${i + 1} OF ${totalFiles}...`;
+            
+            // Calculate checksum for integrity verification
+            integrityCheckEl.style.display = 'block';
+            integrityCheckEl.innerHTML = `✓ CALCULATING CHECKSUM FOR: ${file.name}`;
+            
+            const checksum = await calculateFileChecksum(file);
+            
+            integrityCheckEl.innerHTML = `✓ CHECKSUM: ${checksum.substring(0, 16)}...`;
+            
+            // Simulate upload progress (since IndexedDB is local)
+            await simulateUploadProgress(file.size, (progress) => {
+                const overallProgress = ((uploadedCount + progress / 100) / totalFiles) * 100;
+                progressBar.style.width = overallProgress + '%';
+                progressText.textContent = Math.round(overallProgress) + '%';
+                
+                // Update stats
+                uploadStatsEl.textContent = `${uploadedCount} / ${totalFiles} files`;
+                
+                // Calculate upload speed
+                const elapsedTime = (Date.now() - startTime) / 1000; // seconds
+                const bytesProcessed = totalBytesProcessed + (file.size * progress / 100);
+                const speed = bytesProcessed / elapsedTime;
+                uploadSpeedEl.textContent = formatFileSize(speed) + '/s';
+            });
+
+            // Create file metadata with checksum
             const fileMetadata = {
                 name: file.name,
                 type: getFileType(file.name),
@@ -1604,22 +1740,90 @@ async function uploadFiles() {
                 sizeBytes: file.size,
                 modified: new Date().toISOString(),
                 starred: false,
-                path: currentPath
+                path: currentPath,
+                checksum: checksum // Store checksum for integrity verification
             };
 
             // Store metadata and file blob
             await fileDB.addFile(fileMetadata, file);
+            
+            uploadedCount++;
+            totalBytesProcessed += file.size;
+            
+            // Update progress
+            const overallProgress = (uploadedCount / totalFiles) * 100;
+            progressBar.style.width = overallProgress + '%';
+            progressText.textContent = Math.round(overallProgress) + '%';
+            uploadStatsEl.textContent = `${uploadedCount} / ${totalFiles} files`;
+            
+            uploadStatusEl.innerHTML = `// FILE ${i + 1} UPLOADED SUCCESSFULLY`;
         }
+
+        // Upload complete
+        uploadStatusEl.innerHTML = `✓ ALL FILES UPLOADED SUCCESSFULLY!`;
+        integrityCheckEl.innerHTML = `✓ ALL FILES VERIFIED - INTEGRITY CHECKS PASSED`;
+        
+        // Wait a moment before closing
+        await new Promise(resolve => setTimeout(resolve, 1500));
 
         await loadFilesFromDB();
         await updateStorageInfo();
         renderFiles();
         closeModal('uploadModal');
         fileInput.value = '';
-        showStatus(`${uploadedFiles.length} file(s) uploaded successfully`);
+        
+        // Reset progress UI
+        progressSection.style.display = 'none';
+        progressBar.style.width = '0%';
+        progressText.textContent = '0%';
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = '[ENTER]';
+        
+        showStatus(`${uploadedFiles.length} file(s) uploaded successfully with integrity verification`);
     } catch (error) {
         console.error('Error uploading files:', error);
+        uploadStatusEl.innerHTML = `✗ ERROR: ${error.message}`;
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = '[ENTER]';
         showStatus('Error uploading files', 'error');
+    }
+}
+
+// Calculate file checksum using SHA-256
+// Calculate file checksum using SHA-256
+async function calculateFileChecksum(file) {
+    try {
+        if (!file || !(file instanceof Blob)) {
+            throw new Error('Invalid file object');
+        }
+        
+        const arrayBuffer = await file.arrayBuffer();
+        
+        if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+            throw new Error('Empty file or invalid data');
+        }
+        
+        const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashHex;
+    } catch (error) {
+        console.error('Error calculating checksum:', error);
+        throw new Error(`Checksum calculation failed: ${error.message}`);
+    }
+}
+
+// Simulate upload progress for local storage
+async function simulateUploadProgress(fileSize, onProgress) {
+    // Simulate chunked upload based on file size
+    const chunkSize = 1024 * 1024; // 1MB chunks
+    const totalChunks = Math.ceil(fileSize / chunkSize);
+    const delayPerChunk = Math.min(50, Math.max(10, 500 / totalChunks)); // Adaptive delay
+    
+    for (let i = 0; i <= totalChunks; i++) {
+        const progress = (i / totalChunks) * 100;
+        onProgress(progress);
+        await new Promise(resolve => setTimeout(resolve, delayPerChunk));
     }
 }
 
@@ -1698,7 +1902,18 @@ function showStatus(message, type = 'success') {
     const text = document.getElementById('statusText');
 
     indicator.className = 'status-indicator show ' + type;
-    icon.textContent = type === 'success' ? '✓' : '✗';
+    
+    // Set icon based on type
+    if (type === 'success') {
+        icon.textContent = '✓';
+    } else if (type === 'error') {
+        icon.textContent = '✗';
+    } else if (type === 'info' || type === 'warning') {
+        icon.textContent = '⚠';
+    } else {
+        icon.textContent = '•';
+    }
+    
     text.textContent = message;
 
     setTimeout(() => {

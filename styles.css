@@ -749,6 +749,18 @@ body {
     color: #ff0000;
 }
 
+.status-indicator.info {
+    border-left: 4px solid #00ffff;
+    border-color: #00ffff;
+    box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+}
+
+.status-indicator.warning {
+    border-left: 4px solid #ffff00;
+    border-color: #ffff00;
+    box-shadow: 0 0 20px rgba(255, 255, 0, 0.3);
+}
+
 .status-indicator #statusIcon {
     font-weight: bold;
     font-size: 16px;
@@ -764,6 +776,50 @@ body {
 
 .status-indicator.error #statusText {
     color: #ff0000;
+}
+
+.status-indicator.info #statusText {
+    color: #00ffff;
+}
+
+.status-indicator.warning #statusText {
+    color: #ffff00;
+}
+
+/* Upload Progress Styles */
+#uploadProgressBar {
+    transition: width 0.3s ease;
+}
+
+#uploadProgressText {
+    text-shadow: 0 0 5px rgba(0, 0, 0, 0.8);
+}
+
+#currentFileName {
+    word-break: break-all;
+    animation: blink 1.5s infinite;
+}
+
+#integrityCheck {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}
+
+@keyframes blink {
+    0%, 50%, 100% {
+        opacity: 1;
+    }
+    25%, 75% {
+        opacity: 0.6;
+    }
 }
 
 @keyframes slideIn {

@@ -183,10 +183,42 @@
                     <label class="form-label">$ SELECT FILES:</label>
                     <input type="file" class="form-input" id="fileInput" multiple>
                 </div>
+                
+                <!-- Upload Progress Section -->
+                <div id="uploadProgressSection" style="display: none; margin-top: 20px;">
+                    <div style="border: 1px solid rgba(0, 255, 0, 0.3); padding: 15px; background: rgba(0, 255, 0, 0.05);">
+                        <div style="font-size: 12px; font-weight: 700; color: #00ff00; margin-bottom: 10px;">
+                            // UPLOAD PROGRESS
+                        </div>
+                        
+                        <div id="currentFileInfo" style="font-size: 11px; margin-bottom: 10px; color: rgba(0, 255, 0, 0.8);">
+                            <span id="currentFileName"></span>
+                        </div>
+                        
+                        <div style="background: #000; border: 1px solid #00ff00; height: 30px; position: relative; overflow: hidden;">
+                            <div id="uploadProgressBar" style="background: linear-gradient(90deg, #00ff00, #00cc00); height: 100%; width: 0%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center;">
+                                <span id="uploadProgressText" style="position: relative; z-index: 1; color: #000; font-weight: 700; font-size: 12px; mix-blend-mode: difference;">0%</span>
+                            </div>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 10px; color: rgba(0, 255, 0, 0.7);">
+                            <span id="uploadStats">0 / 0 files</span>
+                            <span id="uploadSpeed">0 KB/s</span>
+                        </div>
+                        
+                        <div id="uploadStatus" style="margin-top: 10px; font-size: 11px; color: #00ffff;">
+                            // PREPARING FILES...
+                        </div>
+                        
+                        <div id="integrityCheck" style="display: none; margin-top: 10px; padding: 8px; background: rgba(0, 255, 255, 0.1); border: 1px solid rgba(0, 255, 255, 0.3); font-size: 10px; color: #00ffff;">
+                            ✓ VERIFYING FILE INTEGRITY...
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-cancel" onclick="closeModal('uploadModal')">[ESC]</button>
-                <button class="btn btn-primary" onclick="uploadFiles()">[ENTER]</button>
+                <button class="btn btn-cancel" onclick="closeModal('uploadModal')" id="uploadCancelBtn">[ESC]</button>
+                <button class="btn btn-primary" onclick="uploadFiles()" id="uploadBtn">[ENTER]</button>
             </div>
         </div>
     </div>
