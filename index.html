@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern File Manager</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen">
+        <div class="login-container">
+            <div class="login-header">
+                <div class="login-title">$ FILE_MANAGER</div>
+                <div class="login-subtitle">// ACCESS CONTROL SYSTEM</div>
+            </div>
+
+            <!-- Login Form -->
+            <form id="loginForm" class="auth-form" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label class="form-label">$ USERNAME:</label>
+                    <input type="text" class="form-input" id="loginUsername" placeholder="enter_username" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">$ PASSWORD:</label>
+                    <input type="password" class="form-input" id="loginPassword" placeholder="enter_password" required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">
+                    [ENTER] LOGIN
+                </button>
+            </form>
+
+            <!-- Register Form -->
+            <form id="registerForm" class="auth-form" onsubmit="handleRegister(event)" style="display: none;">
+                <div class="form-group">
+                    <label class="form-label">$ USERNAME:</label>
+                    <input type="text" class="form-input" id="registerUsername" placeholder="choose_username" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">$ EMAIL:</label>
+                    <input type="email" class="form-input" id="registerEmail" placeholder="enter_email" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">$ PASSWORD:</label>
+                    <input type="password" class="form-input" id="registerPassword" placeholder="choose_password" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">$ CONFIRM PASSWORD:</label>
+                    <input type="password" class="form-input" id="registerConfirmPassword" placeholder="confirm_password" required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">
+                    [ENTER] REGISTER
+                </button>
+            </form>
+
+            <div class="auth-toggle">
+                <span style="color: rgba(0, 255, 0, 0.7); font-size: 12px;">
+                    <span id="toggleText">// NEW USER?</span>
+                    <a class="auth-toggle-link" onclick="toggleAuthForm()">
+                        <span id="toggleLink">[REGISTER]</span>
+                    </a>
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App Container -->
+    <div id="appContainer" style="display: none;">
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>$ FILE_MANAGER_V1.0</h1>
+            <div class="header-actions">
+                <div id="userInfo" style="margin-right: 20px;"></div>
+                <button class="btn btn-primary" onclick="showUploadModal()">
+                    [↑] UPLOAD
+                </button>
+                <button class="btn btn-secondary" onclick="showNewFolderModal()">
+                    [+] NEW_DIR
+                </button>
+            </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <div class="breadcrumb" id="breadcrumb">
+                <div class="breadcrumb-item" onclick="navigateTo('home')">~/ HOME</div>
+            </div>
+            <input type="text" class="search-box" placeholder="$ search..." id="searchBox" oninput="searchFiles()">
+            <div class="view-controls">
+                <button class="view-btn active" onclick="setView('grid')" id="gridBtn">[GRID]</button>
+                <button class="view-btn" onclick="setView('list')" id="listBtn">[LIST]</button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="sidebar-section">
+                    <div class="sidebar-title">// QUICK ACCESS</div>
+                    <div class="sidebar-item active" onclick="filterByType('all')">
+                        > ALL FILES
+                    </div>
+                    <div class="sidebar-item" onclick="filterByType('recent')">
+                        > RECENT
+                    </div>
+                    <div class="sidebar-item" onclick="filterByType('starred')">
+                        > STARRED
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <div class="sidebar-title">// FILE TYPES</div>
+                    <div class="sidebar-item" onclick="filterByType('image')">
+                        > IMAGES
+                    </div>
+                    <div class="sidebar-item" onclick="filterByType('document')">
+                        > DOCUMENTS
+                    </div>
+                    <div class="sidebar-item" onclick="filterByType('video')">
+                        > VIDEOS
+                    </div>
+                    <div class="sidebar-item" onclick="filterByType('audio')">
+                        > AUDIO
+                    </div>
+                </div>
+
+                <div class="storage-info">
+                    <div class="storage-text">// STORAGE USED</div>
+                    <div class="storage-bar">
+                        <div class="storage-fill" style="width: 0%"></div>
+                    </div>
+                    <div class="storage-text">0 B / 5 GB</div>
+                </div>
+            </div>
+
+            <!-- File Area -->
+            <div class="file-area">
+                <div class="file-grid" id="fileArea">
+                    <!-- Files will be populated here by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <!-- Status Indicator -->
+    <div class="status-indicator" id="statusIndicator">
+        <span id="statusIcon">✓</span>
+        <span id="statusText">Saved to database</span>
+    </div>
+
+    <!-- Context Menu -->
+    <div class="context-menu" id="contextMenu">
+        <div class="context-menu-item" onclick="openFile()">> OPEN</div>
+        <div class="context-menu-item" onclick="renameFile()">> RENAME</div>
+        <div class="context-menu-item" onclick="downloadFile()">> DOWNLOAD</div>
+        <div class="context-menu-item" onclick="toggleStar()">> STAR</div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" onclick="deleteFile()">> DELETE</div>
+    </div>
+
+    <!-- Upload Modal -->
+    <div class="modal" id="uploadModal">
+        <div class="modal-content">
+            <div class="modal-header">// UPLOAD FILES</div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">$ SELECT FILES:</label>
+                    <input type="file" class="form-input" id="fileInput" multiple>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-cancel" onclick="closeModal('uploadModal')">[ESC]</button>
+                <button class="btn btn-primary" onclick="uploadFiles()">[ENTER]</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Folder Modal -->
+    <div class="modal" id="newFolderModal">
+        <div class="modal-content">
+            <div class="modal-header">// CREATE DIRECTORY</div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">$ DIR NAME:</label>
+                    <input type="text" class="form-input" id="folderNameInput" placeholder="enter_directory_name">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-cancel" onclick="closeModal('newFolderModal')">[ESC]</button>
+                <button class="btn btn-primary" onclick="createFolder()">[ENTER]</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Modal -->
+    <div class="modal" id="renameModal">
+        <div class="modal-content">
+            <div class="modal-header">// RENAME FILE</div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">$ NEW NAME:</label>
+                    <input type="text" class="form-input" id="renameInput" placeholder="enter_new_name">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-cancel" onclick="closeModal('renameModal')">[ESC]</button>
+                <button class="btn btn-primary" onclick="confirmRename()">[ENTER]</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Panel Modal -->
+    <div class="modal" id="adminPanel">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">// ADMIN CONTROL PANEL</div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <div id="adminStats"></div>
+                <div style="border-top: 1px solid rgba(0, 255, 0, 0.3); padding-top: 15px; margin-top: 15px;">
+                    <div style="font-size: 13px; font-weight: 700; color: #00ff00; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 2px;">
+                        // USER MANAGEMENT
+                    </div>
+                    <div id="adminUsersList"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeModal('adminPanel')">[CLOSE]</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="app.js"></script>
+</body>
+</html>
