@@ -625,6 +625,41 @@ let selectedFiles = []; // Multi-select support
 let isMultiSelectMode = false;
 let sessionUpdateInterval = null;
 
+// Performance Utilities
+// Debounce function for search and resize events
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Throttle function for scroll events
+function throttle(func, limit) {
+    let inThrottle;
+    return function executedFunction(...args) {
+        if (!inThrottle) {
+            func.apply(this, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    };
+}
+
+// Request Animation Frame wrapper for smooth animations
+function smoothAnimate(callback) {
+    if (window.requestAnimationFrame) {
+        requestAnimationFrame(callback);
+    } else {
+        setTimeout(callback, 16); // Fallback ~60fps
+    }
+}
+
 // Theme Management
 let currentTheme = 'dark'; // default
 
@@ -1401,13 +1436,22 @@ function renderFiles() {
     const container = document.createElement('div');
     container.className = currentView === 'grid' ? 'file-grid' : 'file-list';
 
+    // Use DocumentFragment for better performance
+    const fragment = document.createDocumentFragment();
+    
     filteredFiles.forEach(file => {
         const fileElement = createFileElement(file);
-        container.appendChild(fileElement);
+        fragment.appendChild(fileElement);
     });
 
+    container.appendChild(fragment);
     fileArea.innerHTML = '';
     fileArea.appendChild(container);
+    
+    // If many files, show performance tip
+    if (filteredFiles.length > 500) {
+        console.log('%c⚡ Performance Tip: Consider organizing files into folders for better performance', 'color: #ffaa00;');
+    }
 }
 
 // Create file element
@@ -3222,8 +3266,13 @@ function showStatus(message, type = 'success') {
 }
 
 // Search files
-function searchFiles() {
+// Search files with debouncing for performance
+const debouncedSearch = debounce(() => {
     renderFiles();
+}, 300); // Wait 300ms after user stops typing
+
+function searchFiles() {
+    debouncedSearch();
 }
 
 // Show modal
@@ -3304,8 +3353,9 @@ function setupEventListeners() {
         }
     });
     
-    // Mobile responsiveness
-    window.addEventListener('resize', checkMobileView);
+    // Mobile responsiveness with throttling
+    const throttledResize = throttle(checkMobileView, 250);
+    window.addEventListener('resize', throttledResize);
     checkMobileView();
     
     // Close mobile sidebar when clicking on sidebar items
