@@ -1,23 +1,89 @@
+/* ========================================
+   CSS VARIABLES FOR THEME SWITCHING
+   ======================================== */
+:root {
+    /* Dark Theme (Default - Terminal Style) - Optimized for WCAG AAA Contrast */
+    --bg-primary: #000000;
+    --bg-secondary: #0d0d0d;
+    --bg-tertiary: #1a1a1a;
+    --text-primary: #00ff41;
+    --text-secondary: #00cc33;
+    --text-tertiary: #009926;
+    --border-color: #00ff41;
+    --border-color-alpha: rgba(0, 255, 65, 0.3);
+    --shadow-color: rgba(0, 255, 65, 0.2);
+    --hover-bg: rgba(0, 255, 65, 0.1);
+    --active-bg: rgba(0, 255, 65, 0.15);
+    --error-color: #ff3333;
+    --success-color: #00ff41;
+    --info-color: #00e5ff;
+    --warning-color: #ffcc00;
+    --scrollbar-track: #0d0d0d;
+    --scrollbar-thumb: rgba(0, 255, 65, 0.4);
+    --scanline-opacity: 0;
+    
+    /* iPhone-like Animation Curves */
+    --ease-ios: cubic-bezier(0.4, 0.0, 0.2, 1);
+    --ease-ios-in: cubic-bezier(0.4, 0.0, 1, 1);
+    --ease-ios-out: cubic-bezier(0.0, 0.0, 0.2, 1);
+    --ease-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    --transition-fast: 0.2s;
+    --transition-normal: 0.35s;
+    --transition-slow: 0.5s;
+}
+
+/* Light Theme - Optimized for WCAG AAA Contrast */
+body.light-mode {
+    --bg-primary: #fafafa;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #f0f0f0;
+    --text-primary: #1a5c0a;
+    --text-secondary: #2d7a1a;
+    --text-tertiary: #4a9a2e;
+    --border-color: #2d7a1a;
+    --border-color-alpha: rgba(45, 122, 26, 0.3);
+    --shadow-color: rgba(45, 122, 26, 0.15);
+    --hover-bg: rgba(45, 122, 26, 0.08);
+    --active-bg: rgba(45, 122, 26, 0.15);
+    --error-color: #c62828;
+    --success-color: #2e7d32;
+    --info-color: #0277bd;
+    --warning-color: #f57c00;
+    --scrollbar-track: #f0f0f0;
+    --scrollbar-thumb: rgba(45, 122, 26, 0.4);
+    --scanline-opacity: 0;
+}
+
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
 
+html {
+    scroll-behavior: smooth;
+}
+
 body {
     font-family: 'Courier New', 'Consolas', 'Monaco', monospace;
-    background: #0c0c0c;
+    background: var(--bg-primary);
     min-height: 100vh;
     display: flex;
     justify-content: center;
     align-items: center;
     padding: 20px;
-    color: #00ff00;
+    color: var(--text-primary);
     /* Prevent text selection on mobile for better UX */
     -webkit-user-select: none;
     user-select: none;
     /* Disable pull-to-refresh on mobile */
     overscroll-behavior-y: contain;
+    transition: background-color var(--transition-normal) var(--ease-ios), 
+                color var(--transition-normal) var(--ease-ios);
+    /* Enable hardware acceleration */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 /* Allow text selection in inputs and text areas */
@@ -33,7 +99,7 @@ input, textarea, .file-name, .list-name {
     left: 0;
     width: 100%;
     height: 100%;
-    background: #0c0c0c;
+    background: var(--bg-primary);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -41,13 +107,25 @@ input, textarea, .file-name, .list-name {
 }
 
 .login-container {
-    background: #1a1a1a;
-    border: 2px solid #00ff00;
-    box-shadow: 0 0 40px rgba(0, 255, 0, 0.5);
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--border-color-alpha);
     padding: 40px;
     max-width: 450px;
     width: 90%;
     position: relative;
+    animation: loginFadeIn var(--transition-slow) var(--ease-ios);
+}
+
+@keyframes loginFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
 }
 
 .login-container::before {
@@ -57,8 +135,10 @@ input, textarea, .file-name, .list-name {
     left: 0;
     right: 0;
     height: 2px;
-    background: linear-gradient(90deg, transparent, #00ff00, transparent);
-    animation: scanline 2s linear infinite;
+    background: transparent;
+    animation: none;
+    opacity: 0;
+    display: none;
 }
 
 .login-header {
@@ -69,16 +149,16 @@ input, textarea, .file-name, .list-name {
 .login-title {
     font-size: 24px;
     font-weight: 700;
-    color: #00ff00;
+    color: var(--text-primary);
     text-transform: uppercase;
     letter-spacing: 3px;
-    text-shadow: 0 0 10px #00ff00;
+    text-shadow: none;
     margin-bottom: 10px;
 }
 
 .login-subtitle {
     font-size: 12px;
-    color: rgba(0, 255, 0, 0.7);
+    color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 2px;
 }
@@ -98,27 +178,27 @@ input, textarea, .file-name, .list-name {
 
 .auth-message.error {
     background: rgba(255, 0, 0, 0.1);
-    border: 1px solid #ff0000;
-    color: #ff0000;
+    border: 1px solid var(--error-color);
+    color: var(--error-color);
     box-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
 }
 
 .auth-message.success {
-    background: rgba(0, 255, 0, 0.1);
-    border: 1px solid #00ff00;
-    color: #00ff00;
-    box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+    background: var(--hover-bg);
+    border: 1px solid var(--success-color);
+    color: var(--success-color);
+    box-shadow: 0 0 10px var(--shadow-color);
 }
 
 .auth-message.info {
     background: rgba(0, 255, 255, 0.1);
-    border: 1px solid #00ffff;
-    color: #00ffff;
+    border: 1px solid var(--info-color);
+    color: var(--info-color);
     box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
 }
 
 .field-error {
-    color: #ff0000;
+    color: var(--error-color);
     font-size: 11px;
     margin-top: 5px;
     min-height: 16px;
@@ -127,13 +207,13 @@ input, textarea, .file-name, .list-name {
 }
 
 .form-input.error {
-    border-color: #ff0000 !important;
+    border-color: var(--error-color) !important;
     box-shadow: 0 0 10px rgba(255, 0, 0, 0.3) !important;
 }
 
 .form-input.success {
-    border-color: #00ff00 !important;
-    box-shadow: 0 0 10px rgba(0, 255, 0, 0.3) !important;
+    border-color: var(--success-color) !important;
+    box-shadow: 0 0 10px var(--shadow-color) !important;
 }
 
 @keyframes fadeIn {
@@ -151,11 +231,11 @@ input, textarea, .file-name, .list-name {
     text-align: center;
     margin-top: 20px;
     padding-top: 20px;
-    border-top: 1px solid rgba(0, 255, 0, 0.3);
+    border-top: 1px solid var(--border-color-alpha);
 }
 
 .auth-toggle-link {
-    color: #00ff00;
+    color: var(--text-primary);
     text-decoration: none;
     cursor: pointer;
     text-transform: uppercase;
@@ -166,8 +246,8 @@ input, textarea, .file-name, .list-name {
 }
 
 .auth-toggle-link:hover {
-    border-bottom-color: #00ff00;
-    text-shadow: 0 0 10px #00ff00;
+    border-bottom-color: var(--border-color);
+    text-shadow: 0 0 10px var(--text-primary);
 }
 
 #appContainer {
@@ -189,9 +269,9 @@ input, textarea, .file-name, .list-name {
 }
 
 .container {
-    background: #1a1a1a;
-    border: 2px solid #00ff00;
-    box-shadow: 0 0 20px rgba(0, 255, 0, 0.3), inset 0 0 50px rgba(0, 255, 0, 0.05);
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    box-shadow: 0 0 20px var(--shadow-color), inset 0 0 50px var(--border-color-alpha);
     width: 100%;
     max-width: 1200px;
     height: 90vh;
@@ -199,16 +279,17 @@ input, textarea, .file-name, .list-name {
     flex-direction: column;
     overflow: hidden;
     position: relative;
+    transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .header {
-    background: #0a0a0a;
-    color: #00ff00;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
     padding: 15px 30px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 2px solid #00ff00;
+    border-bottom: 2px solid var(--border-color);
     position: relative;
     flex-wrap: wrap;
     gap: 10px;
@@ -228,8 +309,10 @@ input, textarea, .file-name, .list-name {
     left: 0;
     right: 0;
     height: 2px;
-    background: linear-gradient(90deg, transparent, #00ff00, transparent);
-    animation: scanline 2s linear infinite;
+    background: transparent;
+    animation: none;
+    opacity: 0;
+    display: none;
 }
 
 @keyframes scanline {
@@ -242,7 +325,7 @@ input, textarea, .file-name, .list-name {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 2px;
-    text-shadow: 0 0 10px #00ff00;
+    text-shadow: none;
 }
 
 .header-actions {
@@ -252,14 +335,15 @@ input, textarea, .file-name, .list-name {
 
 .btn {
     padding: 10px 20px;
-    border: 2px solid #00ff00;
+    border: 2px solid var(--border-color);
     background: transparent;
-    color: #00ff00;
+    color: var(--text-primary);
     cursor: pointer;
     font-size: 13px;
     font-weight: 700;
     font-family: 'Courier New', monospace;
-    transition: all 0.3s ease;
+    transition: all var(--transition-normal) var(--ease-ios),
+                transform var(--transition-fast) var(--ease-smooth);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -267,6 +351,7 @@ input, textarea, .file-name, .list-name {
     letter-spacing: 1px;
     position: relative;
     overflow: hidden;
+    will-change: transform;
 }
 
 .btn::before {
@@ -277,7 +362,7 @@ input, textarea, .file-name, .list-name {
     width: 100%;
     height: 100%;
     background: rgba(0, 255, 0, 0.2);
-    transition: left 0.3s ease;
+    transition: left var(--transition-normal) var(--ease-ios);
 }
 
 .btn:hover::before {
@@ -287,6 +372,7 @@ input, textarea, .file-name, .list-name {
 .btn:hover {
     box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
     text-shadow: 0 0 10px #00ff00;
+    transform: translateY(-2px);
 }
 
 .btn-primary {
@@ -294,17 +380,18 @@ input, textarea, .file-name, .list-name {
 }
 
 .btn-secondary {
-    border-color: #00ff00;
+    border-color: var(--text-primary);
 }
 
 .btn:active {
-    transform: scale(0.98);
+    transform: scale(0.95) translateY(0);
+    transition: transform 0.1s var(--ease-ios);
 }
 
 .toolbar {
     padding: 12px 30px;
-    background: #151515;
-    border-bottom: 1px solid #00ff00;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-color);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -320,11 +407,11 @@ input, textarea, .file-name, .list-name {
 .breadcrumb-item {
     padding: 6px 12px;
     background: rgba(0, 255, 0, 0.05);
-    border: 1px solid #00ff00;
+    border: 1px solid var(--border-color);
     cursor: pointer;
     transition: all 0.2s ease;
     font-size: 13px;
-    color: #00ff00;
+    color: var(--text-primary);
     text-transform: uppercase;
     letter-spacing: 1px;
 }
@@ -336,9 +423,9 @@ input, textarea, .file-name, .list-name {
 
 .search-box {
     padding: 8px 15px;
-    border: 1px solid #00ff00;
+    border: 1px solid var(--border-color);
     background: rgba(0, 255, 0, 0.05);
-    color: #00ff00;
+    color: var(--text-primary);
     width: 250px;
     font-size: 13px;
     font-family: 'Courier New', monospace;
@@ -363,8 +450,8 @@ input, textarea, .file-name, .list-name {
 .view-btn {
     padding: 8px 12px;
     background: rgba(0, 255, 0, 0.05);
-    border: 1px solid #00ff00;
-    color: #00ff00;
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
     cursor: pointer;
     transition: all 0.2s ease;
     font-family: 'Courier New', monospace;
@@ -387,8 +474,8 @@ input, textarea, .file-name, .list-name {
 
 .sidebar {
     width: 250px;
-    background: #0f0f0f;
-    border-right: 1px solid #00ff00;
+    background: var(--bg-tertiary);
+    border-right: 1px solid var(--border-color);
     padding: 20px;
     overflow-y: auto;
 }
@@ -400,7 +487,7 @@ input, textarea, .file-name, .list-name {
 .sidebar-title {
     font-size: 11px;
     font-weight: 700;
-    color: #00ff00;
+    color: var(--text-primary);
     text-transform: uppercase;
     margin-bottom: 10px;
     letter-spacing: 2px;
@@ -411,31 +498,34 @@ input, textarea, .file-name, .list-name {
 .sidebar-item {
     padding: 10px 15px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--transition-normal) var(--ease-ios),
+                transform var(--transition-fast) var(--ease-smooth);
     display: flex;
     align-items: center;
     gap: 10px;
     margin-bottom: 5px;
     border-left: 2px solid transparent;
-    color: #00ff00;
+    color: var(--text-primary);
 }
 
 .sidebar-item:hover {
     background: rgba(0, 255, 0, 0.1);
-    border-left-color: #00ff00;
+    border-left-color: var(--text-primary);
+    transform: translateX(5px);
 }
 
 .sidebar-item.active {
     background: rgba(0, 255, 0, 0.15);
-    border-left-color: #00ff00;
+    border-left-color: var(--text-primary);
     box-shadow: inset 0 0 10px rgba(0, 255, 0, 0.2);
+    transform: translateX(3px);
 }
 
 .file-area {
     flex: 1;
     padding: 30px;
     overflow-y: auto;
-    background: #121212;
+    background: var(--bg-tertiary);
 }
 
 .file-grid {
@@ -455,9 +545,11 @@ input, textarea, .file-name, .list-name {
     border: 1px solid rgba(0, 255, 0, 0.3);
     padding: 20px;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: all var(--transition-normal) var(--ease-ios),
+                transform var(--transition-fast) var(--ease-smooth);
     text-align: center;
     position: relative;
+    will-change: transform;
 }
 
 .file-item::before {
@@ -467,25 +559,115 @@ input, textarea, .file-name, .list-name {
     left: 0;
     width: 100%;
     height: 100%;
-    border: 1px solid #00ff00;
+    border: 1px solid var(--border-color);
     opacity: 0;
-    transition: opacity 0.3s ease;
+    transition: opacity var(--transition-normal) var(--ease-ios);
 }
 
 .file-item:hover {
     background: rgba(0, 255, 0, 0.1);
-    box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
-    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0, 255, 0, 0.3);
+    transform: translateY(-5px) scale(1.02);
 }
 
 .file-item:hover::before {
     opacity: 1;
 }
 
+.file-item:active {
+    transform: translateY(-2px) scale(0.98);
+    transition: transform 0.1s var(--ease-ios);
+}
+
 .file-item.selected {
     background: rgba(0, 255, 0, 0.15);
-    border-color: #00ff00;
+    border-color: var(--text-primary);
     box-shadow: 0 0 15px rgba(0, 255, 0, 0.5), inset 0 0 20px rgba(0, 255, 0, 0.1);
+    transform: translateY(-2px);
+}
+
+/* Multi-select checkbox overlay */
+.file-select-overlay {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 10;
+    opacity: 0;
+    transition: opacity var(--transition-fast) var(--ease-ios),
+                transform var(--transition-fast) var(--ease-smooth);
+    transform: scale(0.8);
+}
+
+.file-item:hover .file-select-overlay,
+.list-item:hover .file-select-overlay,
+.file-item.selected .file-select-overlay,
+.list-item.selected .file-select-overlay {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.file-checkbox {
+    width: 22px;
+    height: 22px;
+    border: 2px solid var(--border-color);
+    background: var(--bg-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    color: var(--text-primary);
+    font-weight: bold;
+    cursor: pointer;
+    transition: all var(--transition-fast) var(--ease-bounce);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.file-item.selected .file-checkbox,
+.list-item.selected .file-checkbox {
+    background: var(--text-primary);
+    color: var(--bg-primary);
+    border-color: var(--text-primary);
+    transform: scale(1.1);
+}
+
+.file-checkbox:hover {
+    transform: scale(1.15);
+    box-shadow: 0 0 10px var(--shadow-color);
+}
+
+/* Multi-select toolbar */
+.multi-select-toolbar {
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    border-left: 4px solid var(--text-primary);
+    padding: 12px 20px;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    animation: slideDown var(--transition-normal) var(--ease-ios);
+    box-shadow: 0 4px 15px var(--shadow-color);
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-30px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.multi-select-toolbar span {
+    color: var(--text-primary);
+    text-transform: uppercase;
+}
+
+.multi-select-toolbar .btn {
+    white-space: nowrap;
 }
 
 .file-icon {
@@ -497,7 +679,7 @@ input, textarea, .file-name, .list-name {
 .file-name {
     font-size: 13px;
     font-weight: 600;
-    color: #00ff00;
+    color: var(--text-primary);
     word-break: break-word;
     text-transform: uppercase;
     letter-spacing: 1px;
@@ -517,19 +699,30 @@ input, textarea, .file-name, .list-name {
     display: flex;
     align-items: center;
     gap: 15px;
-    transition: all 0.2s ease;
+    position: relative;
+    transition: all var(--transition-normal) var(--ease-ios),
+                transform var(--transition-fast) var(--ease-smooth);
+    cursor: pointer;
+    will-change: transform;
 }
 
 .list-item:hover {
     background: rgba(0, 255, 0, 0.1);
-    border-color: #00ff00;
-    box-shadow: 0 0 15px rgba(0, 255, 0, 0.2);
+    border-color: var(--text-primary);
+    box-shadow: 0 4px 20px rgba(0, 255, 0, 0.25);
+    transform: translateX(5px);
+}
+
+.list-item:active {
+    transform: translateX(2px) scale(0.98);
+    transition: transform 0.1s var(--ease-ios);
 }
 
 .list-item.selected {
     background: rgba(0, 255, 0, 0.15);
-    border-left: 3px solid #00ff00;
+    border-left: 4px solid var(--border-color);
     box-shadow: inset 0 0 20px rgba(0, 255, 0, 0.1);
+    transform: translateX(3px);
 }
 
 .list-icon {
@@ -544,7 +737,7 @@ input, textarea, .file-name, .list-name {
 .list-name {
     font-size: 14px;
     font-weight: 600;
-    color: #00ff00;
+    color: var(--text-primary);
     text-transform: uppercase;
     letter-spacing: 1px;
 }
@@ -558,13 +751,25 @@ input, textarea, .file-name, .list-name {
 
 .context-menu {
     position: fixed;
-    background: #0a0a0a;
-    border: 2px solid #00ff00;
-    box-shadow: 0 0 30px rgba(0, 255, 0, 0.5);
+    background: var(--bg-tertiary);
+    border: 2px solid var(--border-color);
+    box-shadow: 0 10px 40px rgba(0, 255, 0, 0.5);
     padding: 5px;
     z-index: 1000;
     min-width: 200px;
     display: none;
+    animation: contextMenuFadeIn var(--transition-fast) var(--ease-ios);
+}
+
+@keyframes contextMenuFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9) translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
 }
 
 .context-menu-item {
@@ -574,8 +779,8 @@ input, textarea, .file-name, .list-name {
     display: flex;
     align-items: center;
     gap: 10px;
-    color: #00ff00;
-    transition: all 0.2s ease;
+    color: var(--text-primary);
+    transition: all var(--transition-fast) var(--ease-smooth);
     text-transform: uppercase;
     letter-spacing: 1px;
     border-left: 2px solid transparent;
@@ -583,8 +788,13 @@ input, textarea, .file-name, .list-name {
 
 .context-menu-item:hover {
     background: rgba(0, 255, 0, 0.2);
-    border-left-color: #00ff00;
+    border-left-color: var(--text-primary);
     text-shadow: 0 0 10px #00ff00;
+    transform: translateX(5px);
+}
+
+.context-menu-item:active {
+    transform: translateX(2px) scale(0.98);
 }
 
 .context-menu-divider {
@@ -604,6 +814,17 @@ input, textarea, .file-name, .list-name {
     justify-content: center;
     align-items: center;
     z-index: 2000;
+    backdrop-filter: blur(10px);
+    animation: modalBackdropFadeIn var(--transition-normal) var(--ease-ios);
+}
+
+@keyframes modalBackdropFadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
 }
 
 .modal.active {
@@ -611,13 +832,26 @@ input, textarea, .file-name, .list-name {
 }
 
 .modal-content {
-    background: #0f0f0f;
-    border: 2px solid #00ff00;
+    background: var(--bg-tertiary);
+    border: 2px solid var(--border-color);
     padding: 30px;
     max-width: 500px;
     width: 90%;
-    box-shadow: 0 0 40px rgba(0, 255, 0, 0.5);
+    box-shadow: 0 20px 60px rgba(0, 255, 0, 0.4);
     position: relative;
+    animation: modalSlideIn var(--transition-normal) var(--ease-ios);
+    will-change: transform, opacity;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9) translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
 }
 
 .modal-content::before {
@@ -627,16 +861,17 @@ input, textarea, .file-name, .list-name {
     left: -2px;
     right: -2px;
     bottom: -2px;
-    background: linear-gradient(45deg, #00ff00, transparent, #00ff00);
+    background: transparent;
     z-index: -1;
-    opacity: 0.3;
+    opacity: 0;
+    display: none;
 }
 
 .modal-header {
     font-size: 18px;
     font-weight: 700;
     margin-bottom: 20px;
-    color: #00ff00;
+    color: var(--text-primary);
     text-transform: uppercase;
     letter-spacing: 2px;
     border-bottom: 1px solid rgba(0, 255, 0, 0.3);
@@ -656,7 +891,7 @@ input, textarea, .file-name, .list-name {
     margin-bottom: 8px;
     font-size: 13px;
     font-weight: 600;
-    color: #00ff00;
+    color: var(--text-primary);
     text-transform: uppercase;
     letter-spacing: 1px;
 }
@@ -664,22 +899,30 @@ input, textarea, .file-name, .list-name {
 .form-input {
     width: 100%;
     padding: 10px 15px;
-    border: 1px solid #00ff00;
+    border: 1px solid var(--border-color);
     background: rgba(0, 255, 0, 0.05);
-    color: #00ff00;
+    color: var(--text-primary);
     font-size: 14px;
     font-family: 'Courier New', monospace;
-    transition: all 0.3s ease;
+    transition: all var(--transition-normal) var(--ease-ios),
+                border-color var(--transition-fast) var(--ease-smooth);
 }
 
 .form-input::placeholder {
     color: rgba(0, 255, 0, 0.5);
+    transition: color var(--transition-fast) var(--ease-ios);
 }
 
 .form-input:focus {
     outline: none;
     background: rgba(0, 255, 0, 0.1);
-    box-shadow: 0 0 15px rgba(0, 255, 0, 0.3);
+    box-shadow: 0 0 15px rgba(0, 255, 0, 0.3), 0 0 0 3px rgba(0, 255, 0, 0.1);
+    border-color: var(--text-primary);
+    transform: scale(1.01);
+}
+
+.form-input:focus::placeholder {
+    color: rgba(0, 255, 0, 0.7);
 }
 
 .modal-footer {
@@ -695,8 +938,8 @@ input, textarea, .file-name, .list-name {
 }
 
 .btn-cancel:hover {
-    color: #00ff00;
-    border-color: #00ff00;
+    color: var(--text-primary);
+    border-color: var(--text-primary);
 }
 
 .empty-state {
@@ -715,7 +958,7 @@ input, textarea, .file-name, .list-name {
 .empty-state-text {
     font-size: 18px;
     margin-bottom: 10px;
-    color: #00ff00;
+    color: var(--text-primary);
     text-transform: uppercase;
     letter-spacing: 2px;
 }
@@ -725,6 +968,13 @@ input, textarea, .file-name, .list-name {
     border: 1px solid rgba(0, 255, 0, 0.3);
     padding: 15px;
     margin-top: 20px;
+    transition: all 0.2s ease;
+}
+
+.storage-info:hover {
+    background: rgba(0, 255, 0, 0.1);
+    border-color: var(--border-color);
+    box-shadow: 0 0 15px var(--shadow-color);
 }
 
 .storage-bar {
@@ -737,32 +987,80 @@ input, textarea, .file-name, .list-name {
 
 .storage-fill {
     height: 100%;
-    background: #00ff00;
+    background: var(--border-color);
     box-shadow: 0 0 10px #00ff00;
-    transition: width 0.3s ease;
+    transition: width var(--transition-slow) var(--ease-ios);
 }
 
 .storage-text {
     font-size: 11px;
-    color: #00ff00;
+    color: var(--text-primary);
     font-family: 'Courier New', monospace;
     text-transform: uppercase;
     letter-spacing: 1px;
+}
+
+/* Storage Chart Styles */
+#storageChart {
+    border: 2px solid var(--border-color);
+    background: var(--bg-tertiary);
+    box-shadow: 0 4px 15px var(--shadow-color);
+}
+
+#chartLegend {
+    animation: fadeInUp 0.6s var(--ease-ios);
+}
+
+#storageBreakdown {
+    animation: fadeInUp 0.7s var(--ease-ios);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .status-indicator {
     position: fixed;
     bottom: 20px;
     right: 20px;
-    background: #0a0a0a;
-    border: 2px solid #00ff00;
+    background: var(--bg-tertiary);
+    border: 2px solid var(--border-color);
     padding: 15px 20px;
     display: none;
     align-items: center;
     gap: 10px;
     z-index: 1500;
-    animation: slideIn 0.3s ease;
-    box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+    animation: statusSlideIn var(--transition-normal) var(--ease-ios);
+    box-shadow: 0 10px 30px rgba(0, 255, 0, 0.4);
+}
+
+@keyframes statusSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px) translateX(20px) scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) translateX(0) scale(1);
+    }
 }
 
 .status-indicator.show {
@@ -798,7 +1096,7 @@ input, textarea, .file-name, .list-name {
 }
 
 .status-indicator #statusText {
-    color: #00ff00;
+    color: var(--text-primary);
     font-family: 'Courier New', monospace;
     text-transform: uppercase;
     font-size: 12px;
@@ -961,7 +1259,7 @@ input, textarea, .file-name, .list-name {
         height: 100vh;
         z-index: 1000;
         transition: left 0.3s ease;
-        background: #0a0a0a;
+        background: var(--bg-tertiary);
         border-right: 2px solid #00ff00;
         overflow-y: auto;
         padding: 20px;
@@ -1073,6 +1371,19 @@ input, textarea, .file-name, .list-name {
     
     .context-menu-item {
         padding: 10px 12px;
+    }
+    
+    /* Multi-select toolbar mobile */
+    .multi-select-toolbar {
+        flex-direction: column;
+        gap: 10px;
+        padding: 10px 15px;
+    }
+    
+    .multi-select-toolbar > div {
+        width: 100%;
+        flex-wrap: wrap;
+        justify-content: center;
     }
     
     /* Modals */
@@ -1232,31 +1543,31 @@ input, textarea, .file-name, .list-name {
 }
 
 ::-webkit-scrollbar-track {
-    background: #0a0a0a;
-    border: 1px solid rgba(0, 255, 0, 0.2);
+    background: var(--scrollbar-track);
+    border: 1px solid var(--border-color-alpha);
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(0, 255, 0, 0.3);
-    border: 1px solid #00ff00;
+    background: var(--scrollbar-thumb);
+    border: 1px solid var(--border-color);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 255, 0, 0.5);
-    box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+    background: var(--active-bg);
+    box-shadow: 0 0 10px var(--shadow-color);
 }
 
 /* Selection */
 ::selection {
-    background: rgba(0, 255, 0, 0.3);
-    color: #00ff00;
+    background: var(--active-bg);
+    color: var(--text-primary);
 }
 
-/* CRT Effect (optional flicker) */
+/* CRT Effect - Disabled for better readability */
 @keyframes flicker {
-    0% { opacity: 0.97; }
+    0% { opacity: 1; }
     50% { opacity: 1; }
-    100% { opacity: 0.97; }
+    100% { opacity: 1; }
 }
 
 .container::after {
@@ -1266,12 +1577,480 @@ input, textarea, .file-name, .list-name {
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(
-        transparent 0%,
-        rgba(0, 255, 0, 0.02) 50%,
-        transparent 100%
-    );
-    background-size: 100% 4px;
+    background: transparent;
     pointer-events: none;
-    animation: flicker 0.15s infinite;
+    animation: none;
+    opacity: 0;
+    display: none;
 }
+
+/* ========================================
+   THEME COLOR OVERRIDES
+   ======================================== */
+
+/* Container and Layout Colors */
+.container,
+.main-container,
+.content {
+    background: var(--bg-secondary);
+    border-color: var(--border-color);
+    box-shadow: 0 0 20px var(--shadow-color), inset 0 0 50px var(--border-color-alpha);
+}
+
+/* Header */
+.header {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-bottom-color: var(--border-color);
+}
+
+.header h1 {
+    color: var(--text-primary);
+}
+
+.header::before {
+    background: transparent;
+}
+
+/* Sidebar */
+.sidebar {
+    background: var(--bg-tertiary);
+    border-right-color: var(--border-color-alpha);
+}
+
+.sidebar-title {
+    color: var(--text-secondary);
+    border-bottom-color: var(--border-color-alpha);
+}
+
+.sidebar-item {
+    color: var(--text-secondary);
+}
+
+.sidebar-item:hover,
+.sidebar-item.active {
+    background: var(--hover-bg);
+    color: var(--text-primary);
+    border-left-color: var(--border-color);
+}
+
+body.light-mode .sidebar {
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border-color-alpha);
+}
+
+/* Toolbar and Breadcrumb */
+.toolbar {
+    background: var(--bg-tertiary);
+    border-bottom-color: var(--border-color-alpha);
+}
+
+.breadcrumb {
+    background: var(--bg-secondary);
+    border-color: var(--border-color-alpha);
+}
+
+.breadcrumb-item {
+    color: var(--text-primary);
+}
+
+.breadcrumb-item:hover {
+    background: var(--hover-bg);
+}
+
+/* Buttons */
+.btn {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+.btn:hover {
+    background: var(--hover-bg);
+    box-shadow: 0 0 15px var(--shadow-color);
+}
+
+.btn-primary {
+    background: var(--border-color);
+    color: var(--bg-primary);
+}
+
+.btn-secondary {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+body.light-mode .btn-primary {
+    background: var(--border-color);
+    color: var(--bg-secondary);
+}
+
+/* File Items */
+.file-item,
+.list-item {
+    background: var(--bg-tertiary);
+    border-color: var(--border-color-alpha);
+    color: var(--text-primary);
+}
+
+.file-item:hover,
+.list-item:hover {
+    background: var(--hover-bg);
+    border-color: var(--border-color);
+    box-shadow: 0 0 15px var(--shadow-color);
+}
+
+.file-item.selected,
+.list-item.selected {
+    background: var(--active-bg);
+    border-color: var(--border-color);
+}
+
+.file-name,
+.list-name {
+    color: var(--text-primary);
+}
+
+.file-meta,
+.list-meta {
+    color: var(--text-secondary);
+}
+
+/* Forms and Inputs */
+.form-input,
+.search-box,
+.form-select {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+.form-input:focus,
+.search-box:focus {
+    border-color: var(--border-color);
+    box-shadow: 0 0 10px var(--shadow-color);
+}
+
+.form-label {
+    color: var(--text-secondary);
+}
+
+/* Modals */
+.modal-content {
+    background: var(--bg-secondary);
+    border-color: var(--border-color);
+    box-shadow: 0 0 50px var(--shadow-color);
+}
+
+.modal-header {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-bottom-color: var(--border-color);
+}
+
+.modal-footer {
+    border-top-color: var(--border-color-alpha);
+}
+
+/* Context Menu */
+.context-menu {
+    background: var(--bg-secondary);
+    border-color: var(--border-color);
+    box-shadow: 0 0 20px var(--shadow-color);
+}
+
+.context-menu-item {
+    color: var(--text-secondary);
+}
+
+.context-menu-item:hover {
+    background: var(--hover-bg);
+    color: var(--text-primary);
+}
+
+/* Storage Info */
+.storage-info {
+    background: var(--bg-tertiary);
+    border-top-color: var(--border-color-alpha);
+}
+
+.storage-bar {
+    background: var(--bg-secondary);
+    border-color: var(--border-color-alpha);
+}
+
+.storage-fill {
+    background: var(--border-color);
+}
+
+.storage-text {
+    color: var(--text-secondary);
+}
+
+/* Status Indicator */
+.status-indicator {
+    background: var(--bg-secondary);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+.status-indicator.success {
+    border-left-color: var(--success-color);
+}
+
+.status-indicator.error {
+    border-left-color: var(--error-color);
+    border-color: var(--error-color);
+    color: var(--error-color);
+}
+
+.status-indicator.info {
+    border-left-color: var(--info-color);
+    border-color: var(--info-color);
+}
+
+.status-indicator.warning {
+    border-left-color: var(--warning-color);
+    border-color: var(--warning-color);
+}
+
+.status-indicator.error #statusText {
+    color: var(--error-color);
+}
+
+.status-indicator.info #statusText {
+    color: var(--info-color);
+}
+
+.status-indicator.warning #statusText {
+    color: var(--warning-color);
+}
+
+/* Login Tabs */
+.login-tab {
+    color: var(--text-secondary);
+    border-color: var(--border-color-alpha);
+}
+
+.login-tab.active {
+    background: var(--hover-bg);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+/* Auth Links */
+.auth-toggle-link {
+    color: var(--text-primary);
+    border-bottom-color: transparent;
+}
+
+.auth-toggle-link:hover {
+    border-bottom-color: var(--border-color);
+    text-shadow: 0 0 10px var(--text-primary);
+}
+
+/* Admin Panel */
+.admin-table th {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-bottom-color: var(--border-color);
+}
+
+.admin-table td {
+    border-bottom-color: var(--border-color-alpha);
+    color: var(--text-secondary);
+}
+
+.admin-table tr:hover {
+    background: var(--hover-bg);
+}
+
+/* View Controls */
+.view-btn {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border-color: var(--border-color);
+}
+
+.view-btn.active,
+.view-btn:hover {
+    background: var(--hover-bg);
+    color: var(--text-primary);
+}
+
+/* Empty State */
+.empty-state-icon {
+    color: var(--text-tertiary);
+}
+
+.empty-state-text {
+    color: var(--text-secondary);
+}
+
+/* Light Mode Specific Adjustments */
+body.light-mode {
+    /* Cleaner shadows for light mode */
+    --shadow-color: rgba(45, 122, 26, 0.12);
+}
+
+body.light-mode .login-container,
+body.light-mode .container {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1), 0 0 0 1px var(--border-color-alpha);
+}
+
+body.light-mode .login-title,
+body.light-mode .header h1 {
+    text-shadow: none;
+}
+
+body.light-mode .btn:hover {
+    box-shadow: 0 2px 6px var(--shadow-color);
+}
+
+body.light-mode .file-item:hover,
+body.light-mode .list-item:hover {
+    box-shadow: 0 2px 6px var(--shadow-color);
+}
+
+/* Disable scanline effect completely */
+body.light-mode .container::after {
+    display: none;
+}
+
+/* Light mode modal and admin panel improvements */
+body.light-mode .modal-content {
+    background: var(--bg-secondary);
+    border-color: var(--border-color);
+}
+
+body.light-mode .modal-header {
+    color: var(--text-primary);
+    border-bottom-color: var(--border-color-alpha);
+}
+
+body.light-mode .form-label {
+    color: var(--text-primary);
+}
+
+body.light-mode .form-input {
+    background: var(--bg-primary);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+body.light-mode .form-input::placeholder {
+    color: var(--text-tertiary);
+    opacity: 0.7;
+}
+
+body.light-mode .form-input:focus {
+    border-color: var(--text-secondary);
+    box-shadow: 0 0 0 2px var(--border-color-alpha);
+}
+
+body.light-mode .auth-message,
+body.light-mode #changePasswordMessage,
+body.light-mode #forgotPasswordMessage {
+    color: var(--text-primary);
+}
+
+body.light-mode .field-error {
+    color: var(--error-color);
+}
+
+body.light-mode .auth-toggle-link {
+    color: var(--text-secondary);
+}
+
+body.light-mode .auth-toggle span {
+    color: var(--text-tertiary) !important;
+}
+
+/* Admin Panel specific light mode styling */
+body.light-mode #adminPanel .modal-content {
+    background: var(--bg-secondary);
+}
+
+body.light-mode .admin-table {
+    border-color: var(--border-color);
+}
+
+body.light-mode .admin-table th {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-bottom-color: var(--border-color);
+}
+
+body.light-mode .admin-table td {
+    color: var(--text-primary);
+    border-bottom-color: var(--border-color-alpha);
+}
+
+body.light-mode .admin-table tr:hover {
+    background: var(--hover-bg);
+}
+
+/* Light mode info boxes and warnings */
+body.light-mode [style*="background: rgba(0, 255, 255, 0.1)"] {
+    background: rgba(2, 119, 189, 0.1) !important;
+    border-color: rgba(2, 119, 189, 0.3) !important;
+}
+
+body.light-mode [style*="color: rgba(0, 255, 255"] {
+    color: var(--info-color) !important;
+}
+
+body.light-mode [style*="background: rgba(255, 165, 0, 0.1)"] {
+    background: rgba(245, 124, 0, 0.1) !important;
+    border-color: rgba(245, 124, 0, 0.3) !important;
+}
+
+body.light-mode [style*="color: rgba(255, 165, 0"] {
+    color: var(--warning-color) !important;
+}
+
+body.light-mode [style*="background: rgba(0, 255, 0, 0.05)"] {
+    background: rgba(46, 125, 50, 0.05) !important;
+}
+
+body.light-mode [style*="background: rgba(0, 255, 0, 0.1)"] {
+    background: rgba(46, 125, 50, 0.1) !important;
+    border-color: rgba(46, 125, 50, 0.3) !important;
+}
+
+body.light-mode [style*="color: #00ff00"],
+body.light-mode [style*="color: rgba(0, 255, 0"] {
+    color: var(--text-primary) !important;
+}
+
+body.light-mode [style*="color: #00ffff"] {
+    color: var(--info-color) !important;
+}
+
+/* Upload progress section light mode */
+body.light-mode #uploadProgressSection {
+    border-color: var(--border-color-alpha) !important;
+    background: var(--hover-bg) !important;
+}
+
+body.light-mode #uploadProgressBar {
+    background: var(--success-color) !important;
+}
+
+body.light-mode #uploadProgressText {
+    color: #ffffff !important;
+}
+
+body.light-mode #currentFileInfo,
+body.light-mode #uploadStats,
+body.light-mode #uploadSpeed,
+body.light-mode #uploadStatus {
+    color: var(--text-primary) !important;
+}
+
+body.light-mode #integrityCheck {
+    background: rgba(2, 119, 189, 0.1) !important;
+    border-color: rgba(2, 119, 189, 0.3) !important;
+    color: var(--info-color) !important;
+}
+

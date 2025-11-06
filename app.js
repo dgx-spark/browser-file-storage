@@ -621,7 +621,75 @@ let currentView = 'grid';
 let currentFilter = 'all';
 let currentPath = 'home';
 let selectedFile = null;
+let selectedFiles = []; // Multi-select support
+let isMultiSelectMode = false;
 let sessionUpdateInterval = null;
+
+// Theme Management
+let currentTheme = 'dark'; // default
+
+// Detect system theme preference
+function detectSystemTheme() {
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+        return 'light';
+    }
+    return 'dark';
+}
+
+// Initialize theme from localStorage or system preference
+function initializeTheme() {
+    const savedTheme = localStorage.getItem('fileManagerTheme');
+    
+    if (savedTheme) {
+        // Use saved preference
+        currentTheme = savedTheme;
+    } else {
+        // Use system preference
+        currentTheme = detectSystemTheme();
+    }
+    
+    applyTheme(currentTheme);
+    updateThemeIcon();
+    
+    // Listen for system theme changes
+    if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+            // Only auto-switch if user hasn't manually set a preference
+            if (!localStorage.getItem('fileManagerTheme')) {
+                currentTheme = e.matches ? 'light' : 'dark';
+                applyTheme(currentTheme);
+                updateThemeIcon();
+            }
+        });
+    }
+}
+
+// Apply theme
+function applyTheme(theme) {
+    if (theme === 'light') {
+        document.body.classList.add('light-mode');
+    } else {
+        document.body.classList.remove('light-mode');
+    }
+    currentTheme = theme;
+}
+
+// Toggle theme
+function toggleTheme() {
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    applyTheme(newTheme);
+    localStorage.setItem('fileManagerTheme', newTheme);
+    updateThemeIcon();
+    showStatus(`Switched to ${newTheme} mode`, 'success');
+}
+
+// Update theme toggle button icon
+function updateThemeIcon() {
+    const themeIcon = document.getElementById('themeIcon');
+    if (themeIcon) {
+        themeIcon.textContent = currentTheme === 'dark' ? '[☀]' : '[🌙]';
+    }
+}
 
 // Icon mapping
 const icons = {
@@ -672,6 +740,10 @@ function stopSessionMonitor() {
 // Initialize
 async function init() {
     console.log('=== File Manager Initializing ===');
+    
+    // Initialize theme first (before showing any UI)
+    initializeTheme();
+    
     try {
         console.log('Initializing authManager...');
         await authManager.init();
@@ -966,6 +1038,15 @@ async function handleRegister(e) {
             await authManager.login(username, password);
             authManager.currentUser = user;
             fileDB.setUser(user.username);
+            
+            // Create welcome guide for new user
+            try {
+                await createWelcomeGuidePDF();
+                console.log('%c📚 Welcome Guide added to your files!', 'color: #00ffff; font-weight: bold;');
+            } catch (error) {
+                console.error('Error adding welcome guide:', error);
+            }
+            
             hideLoginScreen();
             await loadFilesFromDB();
             await updateStorageInfo();
@@ -973,7 +1054,7 @@ async function handleRegister(e) {
             setupEventListeners();
             updateUserInfo(user);
             startSessionMonitor();
-            showStatus(`Welcome, ${user.username}! Your account has been created.`);
+            showStatus(`Welcome, ${user.username}! Check out your Welcome Guide to get started.`);
         }, 800);
     } catch (error) {
         console.error('Registration error:', error);
@@ -1276,29 +1357,10 @@ async function confirmPasswordRecovery() {
 async function loadFilesFromDB() {
     try {
         files = await fileDB.getAllFiles();
-        
-        // If no files exist, create some demo folders
-        if (files.length === 0) {
-            await createDemoStructure();
-        }
+        // No default folders - user has full control
     } catch (error) {
         console.error('Error loading files:', error);
     }
-}
-
-// Create demo folder structure
-async function createDemoStructure() {
-    const demoFolders = [
-        { name: 'Documents', type: 'folder', size: '-', sizeBytes: 0, modified: new Date().toISOString(), starred: false, path: 'home' },
-        { name: 'Images', type: 'folder', size: '-', sizeBytes: 0, modified: new Date().toISOString(), starred: false, path: 'home' },
-        { name: 'Videos', type: 'folder', size: '-', sizeBytes: 0, modified: new Date().toISOString(), starred: false, path: 'home' }
-    ];
-
-    for (const folder of demoFolders) {
-        await fileDB.addFile(folder);
-    }
-
-    await loadFilesFromDB();
 }
 
 // Format modified date
@@ -1353,10 +1415,15 @@ function createFileElement(file) {
     const element = document.createElement('div');
     const icon = icons[file.type] || icons.default;
     const modifiedText = formatDate(file.modified);
+    const isSelected = selectedFiles.some(f => f.id === file.id);
 
     if (currentView === 'grid') {
         element.className = 'file-item';
+        if (isSelected) element.classList.add('selected');
         element.innerHTML = `
+            <div class="file-select-overlay">
+                <div class="file-checkbox">${isSelected ? '✓' : ''}</div>
+            </div>
             <div class="file-icon">${icon}</div>
             <div class="file-name">${file.name}</div>
             <div class="file-meta">${file.size} • ${modifiedText}</div>
@@ -1364,7 +1431,11 @@ function createFileElement(file) {
         `;
     } else {
         element.className = 'list-item';
+        if (isSelected) element.classList.add('selected');
         element.innerHTML = `
+            <div class="file-select-overlay">
+                <div class="file-checkbox">${isSelected ? '✓' : ''}</div>
+            </div>
             <div class="list-icon">${icon}</div>
             <div class="list-info">
                 <div class="list-name">${file.name}</div>
@@ -1417,15 +1488,39 @@ function filterFiles() {
 function selectFile(file, element, e) {
     if (e) e.stopPropagation();
     
-    document.querySelectorAll('.file-item, .list-item').forEach(el => {
-        el.classList.remove('selected');
-    });
-
-    element.classList.add('selected');
-    selectedFile = file;
-}
-
-// Set view
+    // Check if Ctrl/Cmd key is pressed for multi-select
+    const isCtrlOrCmd = e && (e.ctrlKey || e.metaKey);
+    
+    if (isCtrlOrCmd) {
+        // Toggle selection for this file
+        const fileIndex = selectedFiles.findIndex(f => f.id === file.id);
+        
+        if (fileIndex > -1) {
+            // Deselect
+            selectedFiles.splice(fileIndex, 1);
+            element.classList.remove('selected');
+        } else {
+            // Select
+            selectedFiles.push(file);
+            element.classList.add('selected');
+        }
+        
+        isMultiSelectMode = selectedFiles.length > 1;
+        selectedFile = selectedFiles.length === 1 ? selectedFiles[0] : null;
+    } else {
+        // Single select - clear all previous selections
+        document.querySelectorAll('.file-item, .list-item').forEach(el => {
+            el.classList.remove('selected');
+        });
+        
+        element.classList.add('selected');
+        selectedFile = file;
+        selectedFiles = [file];
+        isMultiSelectMode = false;
+    }
+    
+    updateMultiSelectToolbar();
+}// Set view
 function setView(view) {
     currentView = view;
     document.getElementById('gridBtn').classList.toggle('active', view === 'grid');
@@ -1447,10 +1542,55 @@ function filterByType(type) {
 function showContextMenu(e, file) {
     e.preventDefault();
     const menu = document.getElementById('contextMenu');
+    
+    // If right-clicking on an already selected file in multi-select mode, keep the selection
+    const isFileAlreadySelected = selectedFiles.some(f => f.id === file.id);
+    
+    if (!isFileAlreadySelected || selectedFiles.length === 1) {
+        // If right-clicking on a non-selected file, or only one file selected, select just this file
+        selectedFile = file;
+        if (!isFileAlreadySelected) {
+            selectedFiles = [file];
+        }
+    }
+    
+    // Update menu items based on selection count
+    updateContextMenuForMultiSelect();
+    
     menu.style.display = 'block';
     menu.style.left = e.pageX + 'px';
     menu.style.top = e.pageY + 'px';
-    selectedFile = file;
+}
+
+// Update context menu for multi-select
+function updateContextMenuForMultiSelect() {
+    const menu = document.getElementById('contextMenu');
+    const count = selectedFiles.length;
+    
+    if (count > 1) {
+        menu.innerHTML = `
+            <div class="context-menu-item" onclick="downloadSelectedFiles()">> DOWNLOAD (${count})</div>
+            <div class="context-menu-item" onclick="starSelectedFiles()">> STAR/UNSTAR (${count})</div>
+            <div class="context-menu-divider"></div>
+            <div class="context-menu-item" onclick="deleteSelectedFiles()">> DELETE (${count})</div>
+        `;
+    } else {
+        const file = selectedFile || selectedFiles[0];
+        const isFolder = file && file.type === 'folder';
+        
+        menu.innerHTML = `
+            <div class="context-menu-item" onclick="openFile()">> OPEN</div>
+            <div class="context-menu-item" onclick="renameFile()">> RENAME</div>
+            ${!isFolder ? '<div class="context-menu-item" onclick="copyFile()">> COPY</div>' : ''}
+            <div class="context-menu-item" onclick="moveFile()">> MOVE TO...</div>
+            <div class="context-menu-divider"></div>
+            ${!isFolder ? '<div class="context-menu-item" onclick="downloadFile()">> DOWNLOAD</div>' : ''}
+            <div class="context-menu-item" onclick="toggleStar()">> ${file && file.starred ? 'UNSTAR' : 'STAR'}</div>
+            <div class="context-menu-item" onclick="showFileInfo()">> PROPERTIES</div>
+            <div class="context-menu-divider"></div>
+            <div class="context-menu-item" onclick="deleteFile()">> DELETE</div>
+        `;
+    }
 }
 
 // Hide context menu
@@ -1499,22 +1639,192 @@ function openFolder(folder) {
 // Navigate to path
 function navigateTo(path) {
     currentPath = path;
+    selectedFiles = []; // Clear selection when navigating
+    selectedFile = null;
+    isMultiSelectMode = false;
     updateBreadcrumb();
     renderFiles();
+    updateMultiSelectToolbar();
+}
+
+// Update multi-select toolbar
+function updateMultiSelectToolbar() {
+    let toolbar = document.getElementById('multiSelectToolbar');
+    
+    if (selectedFiles.length > 1) {
+        // Show toolbar if multiple files selected
+        if (!toolbar) {
+            toolbar = document.createElement('div');
+            toolbar.id = 'multiSelectToolbar';
+            toolbar.className = 'multi-select-toolbar';
+            document.querySelector('.container').insertBefore(toolbar, document.querySelector('.main-content'));
+        }
+        
+        toolbar.style.display = 'flex';
+        toolbar.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 15px; flex: 1;">
+                <span style="font-size: 12px; font-weight: 700; letter-spacing: 1px;">
+                    // ${selectedFiles.length} FILES SELECTED
+                </span>
+                <button class="btn btn-secondary" onclick="selectAllFiles()" style="padding: 6px 12px; font-size: 11px;">
+                    [SELECT ALL]
+                </button>
+                <button class="btn btn-cancel" onclick="clearSelection()" style="padding: 6px 12px; font-size: 11px;">
+                    [CLEAR]
+                </button>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn btn-primary" onclick="downloadSelectedFiles()" style="padding: 6px 12px; font-size: 11px;">
+                    [↓] DOWNLOAD (${selectedFiles.length})
+                </button>
+                <button class="btn btn-secondary" onclick="starSelectedFiles()" style="padding: 6px 12px; font-size: 11px;">
+                    [★] STAR (${selectedFiles.length})
+                </button>
+                <button class="btn btn-cancel" onclick="deleteSelectedFiles()" style="padding: 6px 12px; font-size: 11px;">
+                    [×] DELETE (${selectedFiles.length})
+                </button>
+            </div>
+        `;
+    } else {
+        // Hide toolbar if only 0 or 1 file selected
+        if (toolbar) {
+            toolbar.style.display = 'none';
+        }
+    }
+}
+
+// Select all visible files
+// Select all visible files
+function selectAllFiles() {
+    const filteredFiles = filterFiles();
+    
+    if (filteredFiles.length === 0) {
+        showStatus('No files to select', 'info');
+        return;
+    }
+    
+    // Clear previous selection
+    selectedFiles = [];
+    selectedFile = null;
+    
+    // Select all filtered files
+    selectedFiles = [...filteredFiles];
+    isMultiSelectMode = selectedFiles.length > 1;
+    
+    // Re-render to show selection
+    renderFiles();
+    updateMultiSelectToolbar();
+    showStatus(`Selected ${selectedFiles.length} file${selectedFiles.length !== 1 ? 's' : ''}`, 'success');
+}
+
+// Clear selection
+function clearSelection() {
+    selectedFiles = [];
+    selectedFile = null;
+    isMultiSelectMode = false;
+    document.querySelectorAll('.file-item, .list-item').forEach(el => {
+        el.classList.remove('selected');
+    });
+    updateMultiSelectToolbar();
+    showStatus('Selection cleared', 'info');
+}
+
+// Download selected files
+async function downloadSelectedFiles() {
+    if (selectedFiles.length === 0) return;
+    
+    showStatus(`Downloading ${selectedFiles.length} files...`, 'info');
+    
+    for (const file of selectedFiles) {
+        if (file.type !== 'folder') {
+            const blob = await fileDB.getFileBlob(file.id);
+            if (blob) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = file.name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                // Small delay between downloads
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+        }
+    }
+    
+    showStatus(`Downloaded ${selectedFiles.length} files`, 'success');
+}
+
+// Star selected files
+async function starSelectedFiles() {
+    if (selectedFiles.length === 0) return;
+    
+    for (const file of selectedFiles) {
+        file.starred = !file.starred;
+        await fileDB.updateFile(file);
+    }
+    
+    renderFiles();
+    showStatus(`${selectedFiles.length} files starred`, 'success');
+}
+
+// Delete selected files
+async function deleteSelectedFiles() {
+    if (selectedFiles.length === 0) return;
+    
+    const fileCount = selectedFiles.length;
+    const confirmDelete = confirm(`Are you sure you want to delete ${fileCount} selected files?\n\nThis action cannot be undone.`);
+    
+    if (confirmDelete) {
+        for (const file of selectedFiles) {
+            const index = files.findIndex(f => f.id === file.id);
+            if (index > -1) {
+                files.splice(index, 1);
+                await fileDB.deleteFile(file.id);
+            }
+        }
+        
+        selectedFiles = [];
+        selectedFile = null;
+        isMultiSelectMode = false;
+        updateMultiSelectToolbar();
+        await fileDB.saveFiles(files);
+        renderFiles();
+        updateStorage();
+        showStatus(`Deleted ${fileCount} files`, 'success');
+    }
 }
 
 // Update breadcrumb
 function updateBreadcrumb() {
     const breadcrumb = document.getElementById('breadcrumb');
-    breadcrumb.innerHTML = '<div class="breadcrumb-item" onclick="navigateTo(\'home\')">~/ HOME</div>';
+    const pathParts = currentPath === 'home' ? [] : currentPath.split('/').filter(p => p);
     
-    if (currentPath !== 'home') {
-        breadcrumb.innerHTML += `<div style="color: rgba(0, 255, 0, 0.5);">/</div>
-            <div class="breadcrumb-item">${currentPath.toUpperCase()}</div>`;
+    let html = '<div class="breadcrumb-item" onclick="navigateTo(\'home\')" title="Go to Home">~/ HOME</div>';
+    
+    if (pathParts.length > 0) {
+        let accumulatedPath = '';
+        pathParts.forEach((part, index) => {
+            accumulatedPath += (accumulatedPath ? '/' : '') + part;
+            const isLast = index === pathParts.length - 1;
+            html += `<div style="color: rgba(0, 255, 0, 0.5);">/</div>`;
+            
+            if (isLast) {
+                html += `<div class="breadcrumb-item">${part.toUpperCase()}</div>`;
+            } else {
+                html += `<div class="breadcrumb-item" onclick="navigateTo('${accumulatedPath}')" title="Go to ${part}">${part.toUpperCase()}</div>`;
+            }
+        });
     }
+    
+    breadcrumb.innerHTML = html;
 }
 
 // Rename file
+let fileBeingRenamed = null;
+
 async function renameFile() {
     // Save reference to avoid null issues
     const fileToRename = selectedFile;
@@ -1525,6 +1835,9 @@ async function renameFile() {
         return;
     }
     
+    // Store reference globally
+    fileBeingRenamed = fileToRename;
+    
     document.getElementById('renameInput').value = fileToRename.name;
     showModal('renameModal');
     hideContextMenu();
@@ -1533,25 +1846,32 @@ async function renameFile() {
 // Confirm rename
 async function confirmRename() {
     const newName = document.getElementById('renameInput').value.trim();
-    const fileToRename = selectedFile;
     
     if (!newName) {
         alert('Please enter a new name');
         return;
     }
     
-    if (!fileToRename) {
+    if (!fileBeingRenamed) {
         alert('No file selected');
         closeModal('renameModal');
         return;
     }
     
     try {
-        await fileDB.updateFile(fileToRename.id, { name: newName });
+        // Update the file name using the correct updateFile signature
+        await fileDB.updateFile(fileBeingRenamed.id, {
+            name: newName,
+            modified: new Date().toISOString()
+        });
+        
         await loadFilesFromDB();
         renderFiles();
         closeModal('renameModal');
-        showStatus('File renamed successfully');
+        showStatus(`Renamed to "${newName}"`, 'success');
+        
+        // Clear the reference
+        fileBeingRenamed = null;
     } catch (error) {
         console.error('Error renaming file:', error);
         showStatus('Error renaming file', 'error');
@@ -1662,6 +1982,211 @@ async function deleteFile() {
     }
     hideContextMenu();
 }
+
+// Advanced File System Operations
+
+// Move file/folder to different location
+async function moveFile() {
+    const fileToMove = selectedFile;
+    
+    if (!fileToMove) {
+        console.error('No file selected for moving');
+        hideContextMenu();
+        return;
+    }
+    
+    // Get available folders
+    const folders = files.filter(f => f.type === 'folder');
+    
+    if (folders.length === 0) {
+        showStatus('No folders available. Create a folder first.', 'info');
+        hideContextMenu();
+        return;
+    }
+    
+    // Create folder selection modal content
+    let folderOptions = '<option value="home">Home (Root)</option>';
+    folders.forEach(folder => {
+        if (folder.name !== fileToMove.name) {
+            folderOptions += `<option value="${folder.name}">${folder.name}</option>`;
+        }
+    });
+    
+    const moveModalHTML = `
+        <div class="modal active" id="moveFileModal" style="display: flex;">
+            <div class="modal-content">
+                <div class="modal-header">// MOVE: ${fileToMove.name}</div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">$ SELECT DESTINATION:</label>
+                        <select class="form-input" id="moveDestination">
+                            ${folderOptions}
+                        </select>
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 10px;">
+                        Current location: ${fileToMove.path}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-cancel" onclick="closeMoveModal()">[ESC] CANCEL</button>
+                    <button class="btn btn-primary" onclick="confirmMove()">[ENTER] MOVE</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Add modal to body
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = moveModalHTML;
+    document.body.appendChild(tempDiv.firstElementChild);
+    
+    hideContextMenu();
+}
+
+window.closeMoveModal = function() {
+    const modal = document.getElementById('moveFileModal');
+    if (modal) modal.remove();
+};
+
+window.confirmMove = async function() {
+    const destination = document.getElementById('moveDestination').value;
+    const fileToMove = selectedFile;
+    
+    if (!fileToMove) return;
+    
+    try {
+        // Update file path
+        fileToMove.path = destination;
+        fileToMove.modified = new Date().toISOString();
+        
+        await fileDB.updateFile(fileToMove);
+        await loadFilesFromDB();
+        renderFiles();
+        
+        closeMoveModal();
+        showStatus(`Moved "${fileToMove.name}" to ${destination}`, 'success');
+        selectedFile = null;
+    } catch (error) {
+        console.error('Error moving file:', error);
+        showStatus('Error moving file', 'error');
+    }
+};
+
+// Copy file
+async function copyFile() {
+    const fileToCopy = selectedFile;
+    
+    if (!fileToCopy) {
+        console.error('No file selected for copying');
+        hideContextMenu();
+        return;
+    }
+    
+    if (fileToCopy.type === 'folder') {
+        showStatus('Copying folders not supported yet', 'info');
+        hideContextMenu();
+        return;
+    }
+    
+    try {
+        // Create copy with modified name
+        const copyNumber = files.filter(f => f.name.startsWith(fileToCopy.name.split('.')[0])).length;
+        const nameParts = fileToCopy.name.split('.');
+        const extension = nameParts.length > 1 ? '.' + nameParts.pop() : '';
+        const baseName = nameParts.join('.');
+        
+        const copiedFile = {
+            ...fileToCopy,
+            name: `${baseName} (Copy${copyNumber > 1 ? ' ' + copyNumber : ''})${extension}`,
+            id: undefined, // Let DB generate new ID
+            modified: new Date().toISOString()
+        };
+        
+        // Copy blob data
+        const blob = await fileDB.getFileBlob(fileToCopy.id);
+        if (blob) {
+            await fileDB.addFile(copiedFile, blob);
+            await loadFilesFromDB();
+            renderFiles();
+            await updateStorageInfo();
+            showStatus(`Copied "${fileToCopy.name}"`, 'success');
+        } else {
+            throw new Error('Could not read file data');
+        }
+    } catch (error) {
+        console.error('Error copying file:', error);
+        showStatus('Error copying file', 'error');
+    }
+    
+    hideContextMenu();
+}
+
+// Get file properties/info
+async function showFileInfo() {
+    const file = selectedFile;
+    
+    if (!file) {
+        hideContextMenu();
+        return;
+    }
+    
+    const created = new Date(file.modified);
+    const infoModalHTML = `
+        <div class="modal active" id="fileInfoModal" style="display: flex;">
+            <div class="modal-content">
+                <div class="modal-header">// FILE PROPERTIES</div>
+                <div class="modal-body">
+                    <div style="display: grid; gap: 15px;">
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-tertiary);">NAME:</div>
+                            <div style="font-size: 13px; color: var(--text-primary); word-break: break-all;">${file.name}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-tertiary);">TYPE:</div>
+                            <div style="font-size: 13px; color: var(--text-primary);">${file.type.toUpperCase()}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-tertiary);">SIZE:</div>
+                            <div style="font-size: 13px; color: var(--text-primary);">${file.size} (${file.sizeBytes ? file.sizeBytes.toLocaleString() + ' bytes' : '0 bytes'})</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-tertiary);">LOCATION:</div>
+                            <div style="font-size: 13px; color: var(--text-primary);">/${file.path}/</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-tertiary);">MODIFIED:</div>
+                            <div style="font-size: 13px; color: var(--text-primary);">${created.toLocaleString()}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-tertiary);">STARRED:</div>
+                            <div style="font-size: 13px; color: var(--text-primary);">${file.starred ? '★ YES' : '☆ NO'}</div>
+                        </div>
+                        ${file.checksum ? `
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-tertiary);">CHECKSUM (SHA-256):</div>
+                            <div style="font-size: 10px; color: var(--text-primary); word-break: break-all; font-family: monospace;">${file.checksum}</div>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" onclick="closeFileInfoModal()">[CLOSE]</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = infoModalHTML;
+    document.body.appendChild(tempDiv.firstElementChild);
+    
+    hideContextMenu();
+}
+
+window.closeFileInfoModal = function() {
+    const modal = document.getElementById('fileInfoModal');
+    if (modal) modal.remove();
+};
 
 // Show upload modal
 function showUploadModal() {
@@ -1895,6 +2420,781 @@ async function updateStorageInfo() {
     }
 }
 
+// Create Welcome Guide PDF for new users
+async function createWelcomeGuidePDF() {
+    const guideContent = `# WELCOME TO FILE MANAGER PRO 🚀
+
+## YOUR COMPLETE GUIDE TO MASTERING FILE MANAGEMENT
+
+Welcome! We're excited to have you here. This guide will help you get the most out of File Manager Pro.
+
+---
+
+## 📋 TABLE OF CONTENTS
+
+1. Getting Started
+2. Navigation Basics
+3. File Operations
+4. Multi-Select Features
+5. Search & Filters
+6. Storage Management
+7. Advanced Features
+8. Keyboard Shortcuts
+9. Tips & Tricks
+10. Troubleshooting
+
+---
+
+## 🎯 GETTING STARTED
+
+### Your Dashboard
+When you log in, you'll see:
+- **Sidebar (Left)**: Quick navigation and storage info
+- **Main Area (Center)**: Your files and folders
+- **Top Bar**: Search, view options, and user menu
+
+### First Steps
+1. Click "New Folder" to organize your files
+2. Upload files using the "Upload" button or drag & drop
+3. Switch between Grid and List views using the view toggle
+
+---
+
+## 🧭 NAVIGATION BASICS
+
+### Sidebar Navigation
+- **Home**: Your main workspace
+- **Recent**: Recently accessed files
+- **Starred**: Your favorite files
+- **Trash**: Deleted files (can be restored)
+
+### Breadcrumb Navigation
+Click any folder name in the breadcrumb trail to jump back to that location.
+
+### Creating Folders
+1. Click "+ New Folder" button
+2. Enter a name
+3. Press Enter or click Create
+
+---
+
+## 📁 FILE OPERATIONS
+
+### Uploading Files
+**Method 1: Upload Button**
+- Click "Upload" in the toolbar
+- Select one or multiple files
+- Watch the progress bar
+
+**Method 2: Drag & Drop**
+- Drag files from your desktop
+- Drop them anywhere in the file area
+- Instant upload!
+
+### Renaming Files/Folders
+- Right-click → Rename
+- Or press F2 when selected
+- Enter new name and press Enter
+
+### Moving Files
+1. Right-click on file → Move
+2. Select destination folder
+3. Confirm to move
+
+### Copying Files
+1. Right-click on file → Copy
+2. Automatic smart naming (Copy, Copy 2, etc.)
+3. Creates duplicate in same location
+
+### Deleting Files
+- Right-click → Delete
+- Or select and press Delete key
+- Files move to Trash (can be restored)
+
+---
+
+## ✅ MULTI-SELECT FEATURES
+
+### How to Multi-Select
+**Method 1: CTRL+Click (CMD on Mac)**
+- Hold CTRL (or CMD)
+- Click multiple files
+- Each click toggles selection
+
+**Method 2: Checkboxes**
+- Hover over files to see checkboxes
+- Click checkboxes to select
+- Visual confirmation with checkmarks
+
+### Multi-Select Toolbar
+When 2+ files are selected, you'll see:
+- **Select All**: Select all visible files
+- **Download Selected**: Batch download
+- **Star Selected**: Add to favorites
+- **Delete Selected**: Batch delete
+
+### Select All Feature
+- Appears when multi-select is active
+- Selects all files in current view/filter
+- Shows count: "// X FILES SELECTED"
+
+---
+
+## 🔍 SEARCH & FILTERS
+
+### Search Files
+1. Click search icon in toolbar
+2. Type filename or extension
+3. Results update as you type
+
+### Quick Filters
+- **All**: Show everything
+- **Files**: Only files (no folders)
+- **Folders**: Only folders
+- **Starred**: Your favorites
+
+### View Modes
+- **Grid View**: Visual thumbnails with icons
+- **List View**: Detailed table with size/date
+
+---
+
+## 💾 STORAGE MANAGEMENT
+
+### Storage Widget
+Located in the sidebar:
+- Shows used space vs. total (5 GB)
+- Visual progress bar
+- Click for detailed breakdown
+
+### Storage Chart
+Click on storage widget to see:
+- **Pie Chart**: Visual breakdown by type
+- **File Types**: Documents, Images, Videos, Audio, etc.
+- **Stats**: Total files, size, percentage used
+
+### Storage Tips
+- Regularly clean Trash folder
+- Delete duplicate files
+- Compress large files before upload
+- Use file properties to find space hogs
+
+---
+
+## 🔧 ADVANCED FEATURES
+
+### File Properties
+Right-click → Properties to view:
+- File name and type
+- Size and location
+- Upload and modified dates
+- SHA-256 checksum (for verification)
+
+### Context Menu Options
+Right-click any file for:
+1. Open - View/download file
+2. Rename - Change file name
+3. Move - Move to another folder
+4. Copy - Duplicate file
+5. Download - Save to computer
+6. Star/Unstar - Add to favorites
+7. Share - Get shareable link
+8. Properties - View detailed info
+9. Delete - Move to trash
+
+### Theme Toggle
+- Click theme icon (top-right)
+- Switch between Dark and Light modes
+- Automatically saves preference
+- Optimal contrast for accessibility
+
+---
+
+## ⌨️ KEYBOARD SHORTCUTS
+
+### Essential Shortcuts
+- **F2**: Rename selected file
+- **Delete**: Delete selected file
+- **CTRL+Click**: Multi-select files (CMD on Mac)
+- **ESC**: Close modals/cancel operations
+
+### Pro Tips
+- Use Tab to navigate form fields
+- Enter to confirm dialogs
+- Arrow keys to navigate file list
+
+---
+
+## 💡 TIPS & TRICKS
+
+### Organization Tips
+1. **Use Folders**: Create project-based folders
+2. **Star Important**: Mark frequently used files
+3. **Naming Convention**: Use clear, consistent names
+4. **Regular Cleanup**: Empty trash weekly
+
+### Efficiency Hacks
+- **Drag & Drop**: Fastest upload method
+- **Multi-Select**: Batch operations save time
+- **Recent Files**: Quick access to latest work
+- **Search First**: Faster than browsing
+
+### iPhone-Style Animations
+We've designed smooth, buttery animations:
+- Buttons lift on hover
+- Smooth transitions everywhere
+- Bounce effects on interactions
+- Professional, polished feel
+
+---
+
+## 🔨 TROUBLESHOOTING
+
+### Common Issues
+
+**Problem**: Can't upload file
+- **Solution**: Check file size (max per file limits)
+- Check available storage space
+- Try refreshing the page
+
+**Problem**: File won't rename
+- **Solution**: Make sure file isn't being used
+- Check for special characters
+- Try closing and reopening
+
+**Problem**: Multi-select not working
+- **Solution**: Hold CTRL (CMD on Mac) while clicking
+- Ensure 2+ files are selected for toolbar
+- Try using checkboxes instead
+
+**Problem**: Storage full
+- **Solution**: Empty trash folder first
+- Delete unused files
+- Download and remove large files
+- Contact admin for upgrade
+
+**Problem**: Can't find file
+- **Solution**: Use search feature
+- Check all filters (not just current)
+- Look in Trash folder
+- Check correct folder path
+
+---
+
+## 👤 ACCOUNT MANAGEMENT
+
+### User Profile
+Click your name (top-right) to:
+- View account info
+- Change password (coming soon)
+- Manage settings
+- Logout
+
+### Security Tips
+- Use strong passwords
+- Logout on shared devices
+- Don't share credentials
+- Regular password changes
+
+---
+
+## 📊 ADMIN PANEL
+
+### Admin Features (Admin Only)
+- View all users
+- Monitor storage usage
+- User management
+- System statistics
+- Data backup/export
+
+### Accessing Admin Panel
+- Login as admin
+- Click "Admin Panel" in user menu
+- Requires admin privileges
+
+---
+
+## 🌟 BEST PRACTICES
+
+### File Management
+✅ DO:
+- Organize with folders
+- Use descriptive names
+- Regular backups
+- Star important files
+
+❌ DON'T:
+- Upload sensitive data without encryption
+- Use special characters in names
+- Ignore storage limits
+- Share passwords
+
+---
+
+## 📞 GETTING HELP
+
+### Need Support?
+- Check this guide first
+- Review tooltips and hints
+- Contact your admin
+- Check browser console (F12) for errors
+
+### Reporting Issues
+When reporting problems, include:
+1. What you were trying to do
+2. What happened instead
+3. Browser and version
+4. Screenshots if possible
+
+---
+
+## 🎓 ADVANCED WORKFLOWS
+
+### Project Organization
+\`\`\`
+/home
+  /Projects
+    /Project-A
+      /Documents
+      /Images
+      /Final
+    /Project-B
+  /Personal
+  /Archive
+\`\`\`
+
+### File Naming
+- Use dates: 2025-11-06_report.pdf
+- Version numbers: design_v1.2.psd
+- Descriptive: client-proposal-final.docx
+
+---
+
+## 🔐 SECURITY & PRIVACY
+
+### Your Data
+- Files stored securely in IndexedDB
+- Local browser storage
+- Per-user isolation
+- Admin can't access your files without permission
+
+### Privacy
+- No tracking or analytics
+- Your files stay on your device
+- Encrypted at rest
+- Secure authentication
+
+---
+
+## 🚀 COMING SOON
+
+Features in development:
+- File sharing with expiry links
+- Collaborative folders
+- File versioning
+- Advanced search filters
+- Mobile app
+- Cloud sync
+- File preview
+- Zip compression/extraction
+
+---
+
+## 📈 PERFORMANCE TIPS
+
+### Keep It Fast
+- Regular trash cleanup
+- Limit files per folder (< 500 optimal)
+- Compress large files
+- Use appropriate file formats
+
+### Browser Recommendations
+- Chrome/Edge: Recommended
+- Firefox: Fully supported
+- Safari: Supported
+- Clear cache if slow
+
+---
+
+## 🎨 CUSTOMIZATION
+
+### Theme Options
+- **Dark Mode**: Default, easy on eyes
+- **Light Mode**: Clean, professional look
+- Auto-save preference
+- System theme detection
+
+### View Preferences
+- Grid or List view
+- Sort by name, date, size
+- Filter by type
+- All preferences saved
+
+---
+
+## ✨ FEATURE HIGHLIGHTS
+
+### What Makes Us Special
+1. **Smooth Animations**: iPhone-style UX
+2. **Multi-Select**: Powerful batch operations
+3. **Storage Analytics**: Visual breakdown
+4. **Advanced Operations**: Move, Copy, Properties
+5. **No Gradients**: Clean, modern design
+6. **Full Control**: No forced demo folders
+7. **Accessibility**: WCAG AAA compliant
+
+---
+
+## 📝 QUICK REFERENCE CARD
+
+### Essential Actions
+| Action | Method |
+|--------|--------|
+| Upload | Button or Drag & Drop |
+| New Folder | + New Folder button |
+| Rename | Right-click → Rename or F2 |
+| Delete | Right-click → Delete or Del key |
+| Multi-Select | CTRL+Click or checkboxes |
+| Move | Right-click → Move |
+| Copy | Right-click → Copy |
+| Properties | Right-click → Properties |
+| Search | Search icon in toolbar |
+| Theme | Theme icon (top-right) |
+
+---
+
+## 🎯 GETTING THE MOST OUT OF FILE MANAGER
+
+### Daily Use
+1. Start with Recent files for ongoing work
+2. Use Search for quick access
+3. Star files you use often
+4. Organize new files immediately
+
+### Weekly Maintenance
+1. Empty Trash folder
+2. Review storage usage
+3. Archive old projects
+4. Update file names if needed
+
+### Monthly Review
+1. Deep clean unused files
+2. Reorganize folder structure
+3. Backup important data
+4. Review storage analytics
+
+---
+
+## 🌈 ACCESSIBILITY FEATURES
+
+### We Care About Everyone
+- High contrast in light mode (WCAG AAA)
+- Keyboard navigation support
+- Screen reader friendly
+- Clear visual feedback
+- Consistent UI patterns
+
+---
+
+## 💼 PROFESSIONAL USE CASES
+
+### Designers
+- Organize assets by project
+- Quick file properties for specs
+- Multi-select for batch downloads
+- Visual grid view for browsing
+
+### Developers
+- Store project files
+- Use folders for organization
+- File checksums for verification
+- List view for technical details
+
+### Students
+- Organize by subject/semester
+- Star important materials
+- Easy search for assignments
+- Trash recovery for accidents
+
+### Business
+- Professional document management
+- Secure file storage
+- Team collaboration (coming soon)
+- Admin oversight
+
+---
+
+## 🎊 CONGRATULATIONS!
+
+You're now a File Manager Pro expert! 🌟
+
+Remember:
+- Practice makes perfect
+- Explore all features
+- Customize to your needs
+- Keep files organized
+- Ask for help when needed
+
+**Welcome to better file management!**
+
+---
+
+*File Manager Pro - Your files, your way.*
+*Version 1.0 | Last Updated: November 2025*
+
+---
+
+## 📚 APPENDIX
+
+### File Type Icons
+- 📄 Documents: PDF, DOC, TXT
+- 🖼️ Images: JPG, PNG, GIF, SVG
+- 🎵 Audio: MP3, WAV, OGG
+- 🎬 Videos: MP4, AVI, MOV
+- 📦 Archives: ZIP, RAR, TAR
+- 💻 Code: JS, PY, HTML, CSS
+- 📁 Folders: Directory containers
+
+### Storage Limits
+- Total Storage: 5 GB per user
+- Per File: Browser dependent (usually 50MB+)
+- Number of Files: Unlimited (performance optimal < 10,000)
+
+### Browser Storage
+Files stored in IndexedDB:
+- Persistent across sessions
+- Cleared on cache clear
+- Backup regularly!
+
+---
+
+**END OF GUIDE**
+
+Thank you for choosing File Manager Pro! 🚀
+For updates and announcements, stay tuned!`;
+
+    // Create PDF-like text file (actual PDF generation would require library)
+    const blob = new Blob([guideContent], { type: 'text/markdown' });
+    
+    const fileMetadata = {
+        name: 'Welcome_Guide.md',
+        size: blob.size,
+        type: 'text/markdown',
+        path: 'home',
+        isStarred: true, // Auto-star the guide
+        uploaded: Date.now(),
+        modified: Date.now(),
+        checksum: await calculateFileChecksum(blob)
+    };
+    
+    try {
+        const fileId = await fileDB.addFile(fileMetadata, blob);
+        console.log('%c✓ Welcome Guide created successfully!', 'color: #00ff00; font-weight: bold;');
+        return fileId;
+    } catch (error) {
+        console.error('Error creating welcome guide:', error);
+        throw error;
+    }
+}
+
+// Show storage chart modal
+async function showStorageChart() {
+    const modal = document.getElementById('storageChartModal');
+    modal.classList.add('active');
+    
+    // Calculate storage by type
+    const storageByType = calculateStorageByType();
+    const totalBytes = await fileDB.getTotalSize();
+    const maxBytes = 5 * 1024 * 1024 * 1024; // 5 GB
+    const percentage = ((totalBytes / maxBytes) * 100).toFixed(1);
+    
+    // Update stats
+    document.getElementById('totalFiles').textContent = files.length;
+    document.getElementById('totalSize').textContent = formatFileSize(totalBytes);
+    document.getElementById('storagePercent').textContent = percentage + '%';
+    
+    // Draw pie chart
+    drawPieChart(storageByType);
+    
+    // Create legend
+    createChartLegend(storageByType);
+    
+    // Create storage breakdown bars
+    createStorageBreakdown(storageByType, totalBytes);
+}
+
+// Calculate storage by file type
+function calculateStorageByType() {
+    const storageByType = {
+        image: { bytes: 0, count: 0, color: '#00ffff', label: 'Images', icon: '🖼️' },
+        video: { bytes: 0, count: 0, color: '#ff00ff', label: 'Videos', icon: '🎥' },
+        audio: { bytes: 0, count: 0, color: '#ffff00', label: 'Audio', icon: '🎵' },
+        document: { bytes: 0, count: 0, color: '#00ff00', label: 'Documents', icon: '📄' },
+        archive: { bytes: 0, count: 0, color: '#ff8800', label: 'Archives', icon: '📦' },
+        folder: { bytes: 0, count: 0, color: '#0088ff', label: 'Folders', icon: '📁' },
+        other: { bytes: 0, count: 0, color: '#888888', label: 'Other', icon: '📄' }
+    };
+    
+    files.forEach(file => {
+        const type = file.type || 'other';
+        const sizeBytes = parseSizeToBytes(file.size);
+        
+        if (storageByType[type]) {
+            storageByType[type].bytes += sizeBytes;
+            storageByType[type].count += 1;
+        } else {
+            storageByType.other.bytes += sizeBytes;
+            storageByType.other.count += 1;
+        }
+    });
+    
+    return storageByType;
+}
+
+// Parse size string to bytes
+function parseSizeToBytes(sizeStr) {
+    if (!sizeStr) return 0;
+    
+    const units = {
+        'B': 1,
+        'KB': 1024,
+        'MB': 1024 * 1024,
+        'GB': 1024 * 1024 * 1024
+    };
+    
+    const match = sizeStr.match(/^([\d.]+)\s*([A-Z]+)$/i);
+    if (match) {
+        const value = parseFloat(match[1]);
+        const unit = match[2].toUpperCase();
+        return value * (units[unit] || 1);
+    }
+    
+    return 0;
+}
+
+// Draw pie chart
+function drawPieChart(storageByType) {
+    const canvas = document.getElementById('storageChart');
+    const ctx = canvas.getContext('2d');
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const radius = 80;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Calculate total bytes (excluding folders and items with 0 bytes)
+    const totalBytes = Object.values(storageByType)
+        .filter(type => type.bytes > 0)
+        .reduce((sum, type) => sum + type.bytes, 0);
+    
+    if (totalBytes === 0) {
+        // Draw empty state
+        ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text-tertiary') || '#666';
+        ctx.font = '12px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText('NO DATA', centerX, centerY);
+        return;
+    }
+    
+    // Draw pie slices
+    let startAngle = -Math.PI / 2; // Start from top
+    
+    Object.entries(storageByType).forEach(([type, data]) => {
+        if (data.bytes > 0) {
+            const sliceAngle = (data.bytes / totalBytes) * 2 * Math.PI;
+            
+            // Draw slice
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.arc(centerX, centerY, radius, startAngle, startAngle + sliceAngle);
+            ctx.closePath();
+            ctx.fillStyle = data.color;
+            ctx.fill();
+            
+            // Draw border
+            ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--bg-primary') || '#000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            startAngle += sliceAngle;
+        }
+    });
+    
+    // Draw center circle for donut effect
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius * 0.5, 0, 2 * Math.PI);
+    ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--bg-secondary') || '#0d0d0d';
+    ctx.fill();
+    ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--border-color') || '#00ff41';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+}
+
+// Create chart legend
+function createChartLegend(storageByType) {
+    const legend = document.getElementById('chartLegend');
+    let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+    
+    Object.entries(storageByType).forEach(([type, data]) => {
+        if (data.bytes > 0) {
+            const percentage = ((data.bytes / Object.values(storageByType).reduce((sum, t) => sum + t.bytes, 0)) * 100).toFixed(1);
+            html += `
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="width: 20px; height: 20px; background: ${data.color}; border: 1px solid var(--border-color);"></div>
+                    <div style="flex: 1;">
+                        <div style="font-size: 12px; color: var(--text-primary); font-weight: 600;">
+                            ${data.icon} ${data.label}
+                        </div>
+                        <div style="font-size: 10px; color: var(--text-tertiary);">
+                            ${data.count} files • ${formatFileSize(data.bytes)} (${percentage}%)
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    });
+    
+    html += '</div>';
+    legend.innerHTML = html;
+}
+
+// Create storage breakdown bars
+function createStorageBreakdown(storageByType, totalBytes) {
+    const breakdown = document.getElementById('storageBreakdown');
+    let html = '';
+    
+    Object.entries(storageByType)
+        .filter(([type, data]) => data.bytes > 0)
+        .sort((a, b) => b[1].bytes - a[1].bytes)
+        .forEach(([type, data]) => {
+            const percentage = ((data.bytes / totalBytes) * 100).toFixed(1);
+            html += `
+                <div style="margin-bottom: 15px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span style="font-size: 11px; color: var(--text-primary); font-weight: 600;">
+                            ${data.icon} ${data.label.toUpperCase()} (${data.count})
+                        </span>
+                        <span style="font-size: 11px; color: var(--text-secondary);">
+                            ${formatFileSize(data.bytes)} • ${percentage}%
+                        </span>
+                    </div>
+                    <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color-alpha); height: 20px; position: relative; overflow: hidden;">
+                        <div style="background: ${data.color}; height: 100%; width: ${percentage}%; transition: width 0.5s ease; display: flex; align-items: center; padding: 0 8px;">
+                            <span style="font-size: 10px; color: #000; font-weight: 700; white-space: nowrap; mix-blend-mode: difference;">${percentage}%</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+    
+    if (html === '') {
+        html = '<div style="text-align: center; color: var(--text-tertiary); padding: 20px;">No files to display</div>';
+    }
+    
+    breakdown.innerHTML = html;
+}
+
 // Show status notification
 function showStatus(message, type = 'success') {
     const indicator = document.getElementById('statusIndicator');
@@ -1934,6 +3234,11 @@ function showModal(modalId) {
 // Close modal
 function closeModal(modalId) {
     document.getElementById(modalId).classList.remove('active');
+    
+    // Clear rename reference when closing rename modal
+    if (modalId === 'renameModal') {
+        fileBeingRenamed = null;
+    }
 }
 
 // Mobile Menu Functions

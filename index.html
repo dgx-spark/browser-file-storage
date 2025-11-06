@@ -87,6 +87,9 @@
             </button>
             <h1>$ FILE_MANAGER_V1.0</h1>
             <div class="header-actions">
+                <button class="btn btn-secondary" onclick="toggleTheme()" id="themeToggleBtn" title="Toggle Light/Dark Mode">
+                    <span id="themeIcon">[☀]</span>
+                </button>
                 <div id="userInfo" style="margin-right: 20px;"></div>
                 <button class="btn btn-primary" onclick="showUploadModal()">
                     [↑] UPLOAD
@@ -107,6 +110,11 @@
                 <button class="view-btn active" onclick="setView('grid')" id="gridBtn">[GRID]</button>
                 <button class="view-btn" onclick="setView('list')" id="listBtn">[LIST]</button>
             </div>
+        </div>
+        
+        <!-- Multi-select hint -->
+        <div style="padding: 8px 20px; font-size: 11px; color: var(--text-tertiary); text-align: center; border-bottom: 1px solid var(--border-color-alpha);">
+            💡 TIP: Hold CTRL (CMD on Mac) and click to select multiple files
         </div>
 
         <!-- Main Content -->
@@ -145,7 +153,7 @@
                     </div>
                 </div>
 
-                <div class="storage-info">
+                <div class="storage-info" onclick="showStorageChart()" style="cursor: pointer;" title="Click to view storage breakdown">
                     <div class="storage-text">// STORAGE USED</div>
                     <div class="storage-bar">
                         <div class="storage-fill" style="width: 0%"></div>
@@ -202,7 +210,7 @@
                         </div>
                         
                         <div style="background: #000; border: 1px solid #00ff00; height: 30px; position: relative; overflow: hidden;">
-                            <div id="uploadProgressBar" style="background: linear-gradient(90deg, #00ff00, #00cc00); height: 100%; width: 0%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center;">
+                            <div id="uploadProgressBar" style="background: #00ff00; height: 100%; width: 0%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center;">
                                 <span id="uploadProgressText" style="position: relative; z-index: 1; color: #000; font-weight: 700; font-size: 12px; mix-blend-mode: difference;">0%</span>
                             </div>
                         </div>
@@ -392,6 +400,55 @@
             <div class="modal-footer">
                 <button class="btn btn-cancel" onclick="closeForgotPasswordModal()">[ESC] CANCEL</button>
                 <button class="btn btn-primary" onclick="confirmPasswordRecovery()">[ENTER] RESET PASSWORD</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Storage Chart Modal -->
+    <div class="modal" id="storageChartModal">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">// STORAGE ANALYSIS</div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <div id="storageStats" style="margin-bottom: 20px;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                        <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color-alpha); padding: 15px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: 700; color: var(--text-primary);" id="totalFiles">0</div>
+                            <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 5px;">TOTAL FILES</div>
+                        </div>
+                        <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color-alpha); padding: 15px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: 700; color: var(--text-primary);" id="totalSize">0 B</div>
+                            <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 5px;">TOTAL SIZE</div>
+                        </div>
+                        <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color-alpha); padding: 15px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: 700; color: var(--text-primary);" id="storagePercent">0%</div>
+                            <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 5px;">USED</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="border-top: 1px solid var(--border-color-alpha); padding-top: 20px; margin-top: 20px;">
+                    <div style="font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 15px; text-transform: uppercase; letter-spacing: 2px;">
+                        // STORAGE BY FILE TYPE
+                    </div>
+                    
+                    <!-- Pie Chart -->
+                    <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: center; justify-content: center; margin-bottom: 30px;">
+                        <div style="position: relative; width: 200px; height: 200px;">
+                            <canvas id="storageChart" width="200" height="200"></canvas>
+                        </div>
+                        <div id="chartLegend" style="flex: 1; min-width: 200px;">
+                            <!-- Legend will be populated by JavaScript -->
+                        </div>
+                    </div>
+                    
+                    <!-- Storage Bars -->
+                    <div id="storageBreakdown">
+                        <!-- Breakdown bars will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeModal('storageChartModal')">[CLOSE]</button>
             </div>
         </div>
     </div>
